@@ -10,6 +10,8 @@
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
     "@monaco-editor/react": "^4.6.0",
     "@neondatabase/serverless": "^0.9.5",
     "canvas-confetti": "^1.9.3",
@@ -23,6 +25,7 @@
     "tailwind-merge": "^2.5.2"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
     "@types/canvas-confetti": "^1.9.0",
     "@types/jszip": "^3.4.1",
     "@types/node": "^20.16.10",
