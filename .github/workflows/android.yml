@@ -52,8 +52,18 @@ jobs:
           # Capacitor Android runtime itself supports JDK 17, so keep this
           # build compatible with the requested JDK 17 action image.
           sed -i 's/VERSION_21/VERSION_17/g' app/capacitor.build.gradle
+          set -o pipefail
           chmod +x ./gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug --no-daemon --stacktrace --info 2>&1 | tee gradle-build.log
+
+      - name: Upload Gradle failure log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cursive-gradle-log
+          path: android/gradle-build.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
