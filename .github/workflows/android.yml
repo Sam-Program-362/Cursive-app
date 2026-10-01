@@ -55,15 +55,24 @@ jobs:
         run: npx cap sync android
 
       - name: Build debug APK
+        id: gradle_build
+        continue-on-error: true
         working-directory: android
         run: |
           # Capacitor 8 generates Java 21 compile options by default. The
           # Capacitor Android runtime itself supports JDK 17, so keep this
           # build compatible with the requested JDK 17 action image.
           sed -i 's/VERSION_21/VERSION_17/g' app/capacitor.build.gradle
-          set -o pipefail
           chmod +x ./gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace --info 2>&1 | tee gradle-build.log
+          set +e
+          ./gradlew assembleDebug --no-daemon --stacktrace --info > gradle-build.log 2>&1
+          status=$?
+          tail -120 gradle-build.log
+          if [ "$status" -ne 0 ]; then
+            summary=$(grep -E 'What went wrong|Could not |error:|FAILURE|requires|not found' gradle-build.log | tail -12 | tr '\n' ' ' | cut -c1-900)
+            echo "::error title=Gradle build failure::$summary"
+          fi
+          exit "$status"
 
       - name: Upload Gradle failure log
         if: always()
@@ -73,6 +82,10 @@ jobs:
           path: android/gradle-build.log
           if-no-files-found: ignore
           retention-days: 7
+
+      - name: Stop after a failed Gradle build
+        if: steps.gradle_build.outcome == 'failure'
+        run: exit 1
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
