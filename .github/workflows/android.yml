@@ -70,8 +70,9 @@ jobs:
           status=$?
           tail -120 gradle-build.log
           if [ "$status" -ne 0 ]; then
-            summary=$(awk '/What went wrong:/{capture=1} capture{print} /BUILD FAILED/{capture=0}' gradle-build.log | tail -40 | tr '\n' ' ' | cut -c1-900)
-            if [ -z "$summary" ]; then summary=$(tail -20 gradle-build.log | tr '\n' ' ' | cut -c1-900); fi
+            summary=$(grep -A12 -B2 -E '^FAILURE:|^\* What went wrong:' gradle-build.log | head -35 | tr '\n' ' ' | cut -c1-900)
+            if [ -z "$summary" ]; then summary=$(grep -E '^> |^Execution failed|^Caused by:' gradle-build.log | head -12 | tr '\n' ' ' | cut -c1-900); fi
+            if [ -z "$summary" ]; then summary=$(tail -8 gradle-build.log | tr '\n' ' ' | cut -c1-900); fi
             echo "::error title=Gradle build failure::$summary"
           fi
           exit "$status"
