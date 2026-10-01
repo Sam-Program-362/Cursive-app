@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Cursive</string>
+    <string name="title_activity_main">Cursive</string>
+    <string name="package_name">com.cursive.app</string>
+    <string name="custom_url_scheme">com.cursive.app</string>
+</resources>

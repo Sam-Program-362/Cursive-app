@@ -1,0 +1,84 @@
+name: Build Cursive APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cursive-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Chaquopy compiles the Python sources to .pyc at build time, which needs
+      # the matching Python version on the build machine.
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync Capacitor Android project
+        run: npx cap sync android
+
+      - name: Build APK
+        working-directory: android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Stage APK
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/debug/app-debug.apk dist/Cursive.apk
+          ls -la dist
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cursive-apk
+          path: dist/Cursive.apk
+          if-no-files-found: error
+
+      - name: Publish "Cursive latest" release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: cursive-latest
+          name: Cursive latest
+          body: |
+            Latest Android build of Cursive.
+
+            Tap **Cursive.apk** below to download it, then open the file on your
+            phone to install. You may need to allow "Install unknown apps" for
+            your browser the first time.
+          files: dist/Cursive.apk
+          make_latest: true
+          fail_on_unmatched_files: true
