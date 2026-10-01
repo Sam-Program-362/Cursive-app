@@ -30,6 +30,14 @@ jobs:
           java-version: "17"
           cache: gradle
 
+      - name: Install Android SDK tools
+        uses: android-actions/setup-android@v3
+
+      - name: Ensure Android API 36 is available
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
