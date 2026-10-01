@@ -74,6 +74,11 @@ jobs:
           fi
           exit "$status"
 
+      - name: Give the APK its Cursive filename
+        if: steps.gradle_build.outcome == 'success'
+        working-directory: android
+        run: cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/Cursive.apk
+
       - name: Upload Gradle failure log
         if: always()
         uses: actions/upload-artifact@v4
@@ -91,7 +96,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cursive-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/debug/Cursive.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -106,7 +111,7 @@ jobs:
 
             This APK loads https://cursive-coding.vercel.app in the native Cursive shell.
             Android may ask you to allow your browser to install apps from unknown sources.
-          files: android/app/build/outputs/apk/debug/app-debug.apk
+          files: android/app/build/outputs/apk/debug/Cursive.apk
           make_latest: true
           fail_on_unmatched_files: true
         env:
