@@ -1,0 +1,37 @@
+{
+  "name": "cursive-codepad",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -H 0.0.0.0 -p 3000",
+    "build": "next build",
+    "start": "next start -H 0.0.0.0 -p 3000",
+    "lint": "next lint",
+    "db:push": "drizzle-kit push"
+  },
+  "dependencies": {
+    "@monaco-editor/react": "^4.6.0",
+    "@neondatabase/serverless": "^0.9.5",
+    "canvas-confetti": "^1.9.3",
+    "clsx": "^2.1.1",
+    "drizzle-orm": "^0.33.0",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.446.0",
+    "next": "14.2.15",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^2.5.2"
+  },
+  "devDependencies": {
+    "@types/canvas-confetti": "^1.9.0",
+    "@types/jszip": "^3.4.1",
+    "@types/node": "^20.16.10",
+    "@types/react": "^18.3.10",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.20",
+    "drizzle-kit": "^0.24.2",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.13",
+    "typescript": "^5.6.2"
+  }
+}
