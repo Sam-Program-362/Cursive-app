@@ -48,6 +48,10 @@ jobs:
       - name: Build debug APK
         working-directory: android
         run: |
+          # Capacitor 8 generates Java 21 compile options by default. The
+          # Capacitor Android runtime itself supports JDK 17, so keep this
+          # build compatible with the requested JDK 17 action image.
+          sed -i 's/VERSION_21/VERSION_17/g' app/capacitor.build.gradle
           chmod +x ./gradlew
           ./gradlew assembleDebug --no-daemon
 
