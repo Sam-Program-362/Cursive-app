@@ -1,0 +1,28 @@
+{
+  "name": "Cursive",
+  "short_name": "Cursive",
+  "description": "A smooth, mobile-friendly code editor with AI suggestions, theming, and in-browser execution.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1b2e",
+  "theme_color": "#1a1b2e",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
