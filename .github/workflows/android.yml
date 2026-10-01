@@ -63,13 +63,15 @@ jobs:
           # Capacitor Android runtime itself supports JDK 17, so keep this
           # build compatible with the requested JDK 17 action image.
           sed -i 's/VERSION_21/VERSION_17/g' app/capacitor.build.gradle
+          mkdir -p app/libs capacitor-cordova-android-plugins/src/main/libs
           chmod +x ./gradlew
           set +e
           ./gradlew assembleDebug --no-daemon --stacktrace --info > gradle-build.log 2>&1
           status=$?
           tail -120 gradle-build.log
           if [ "$status" -ne 0 ]; then
-            summary=$(grep -E 'What went wrong|Could not |error:|FAILURE|requires|not found' gradle-build.log | tail -12 | tr '\n' ' ' | cut -c1-900)
+            summary=$(awk '/What went wrong:/{capture=1} capture{print} /BUILD FAILED/{capture=0}' gradle-build.log | tail -40 | tr '\n' ' ' | cut -c1-900)
+            if [ -z "$summary" ]; then summary=$(tail -20 gradle-build.log | tr '\n' ' ' | cut -c1-900); fi
             echo "::error title=Gradle build failure::$summary"
           fi
           exit "$status"
