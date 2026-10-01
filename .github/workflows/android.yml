@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+      # Temporary branch build so this first APK can be verified before
+      # merging the workflow to main. Remove after the first successful run.
+      - arena/01a0f9b7-cursive-app
   workflow_dispatch:
 
 # The release step uses the automatically-created token to replace the
