@@ -1,11 +1,17 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import Editor, { OnMount, BeforeMount } from "@monaco-editor/react";
+import Editor, { OnMount, BeforeMount, loader } from "@monaco-editor/react";
 import { EditorSettings, FileItem } from "@/types";
 import { registerMonacoThemes, registerCustomMonacoTheme, THEMES } from "@/lib/themes";
 import { registerLanguageProviders } from "@/lib/monaco-snippets";
 import { Loader2 } from "lucide-react";
+
+// Serve Monaco from files bundled with the app (copied into
+// `public/monaco/vs` by `scripts/copy-monaco.mjs`) instead of the jsDelivr
+// CDN. This is what lets the Android APK show the editor with no network and
+// without loading the remote live site.
+loader.config({ paths: { vs: "/monaco/vs" } });
 
 interface CodeEditorProps {
   file: FileItem | null;

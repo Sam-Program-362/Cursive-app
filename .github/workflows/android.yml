@@ -46,6 +46,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Produces the fully static editor bundle in `out/` (Monaco copied in and
+      # no server, no API routes) so Capacitor bakes it *inside* the APK.
+      - name: Build bundled web assets
+        run: npm run build:android
+
       - name: Sync Capacitor Android project
         run: npx cap sync android
 

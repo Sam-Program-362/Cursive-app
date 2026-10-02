@@ -3,18 +3,16 @@ import type { CapacitorConfig } from "@capacitor/cli";
 /**
  * Capacitor shell for the Android build (Cursive.apk).
  *
- * The native app loads the same live editor as the web app, so editor fixes
- * ship instantly without rebuilding the APK. The bundled `webDir` is only a
- * placeholder that Capacitor requires to exist.
+ * The editor is bundled *inside* the APK: `webDir` points at the static
+ * export produced by `npm run build:android` (Next.js writes it to `out/`),
+ * and `npx cap sync android` copies it into the app. There is intentionally no
+ * `server.url` — the app never loads the remote live site, so it starts fast
+ * and keeps working offline.
  */
 const config: CapacitorConfig = {
   appId: "com.cursive.app",
   appName: "Cursive",
-  webDir: "public",
-  server: {
-    url: "https://cursive-coding.vercel.app",
-    cleartext: false,
-  },
+  webDir: "out",
   android: {
     backgroundColor: "#1a1b2e",
     allowMixedContent: false,

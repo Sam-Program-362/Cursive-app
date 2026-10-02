@@ -3,8 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/copy-monaco.mjs",
     "dev": "next dev -H 0.0.0.0 -p 3000",
+    "prebuild": "node scripts/copy-monaco.mjs",
     "build": "next build",
+    "build:android": "node scripts/build-android.mjs",
     "start": "next start -H 0.0.0.0 -p 3000",
     "lint": "next lint",
     "db:push": "drizzle-kit push"
@@ -19,6 +22,7 @@
     "drizzle-orm": "^0.33.0",
     "jszip": "^3.10.1",
     "lucide-react": "^0.446.0",
+    "monaco-editor": "0.57.0",
     "next": "14.2.15",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

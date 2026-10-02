@@ -94,10 +94,15 @@ Visit [http://localhost:3000](http://localhost:3000) to open CodePad.
 
 ## 📱 Android app (`Cursive.apk`)
 
-The `android/` directory is a Capacitor shell around the live editor, with a
-**real CPython interpreter** embedded via [Chaquopy](https://chaquo.com/chaquopy/).
-On Android, Python runs natively — `input()` works interactively, files can be
-read and written, and `import` finds other files in your project.
+The editor is **bundled inside the APK** — the app does not load the hosted
+site, so it starts instantly and keeps working offline. Capacitor copies the
+static export in `out/` into the Android project, and Monaco is served from the
+app itself instead of a CDN.
+
+The APK also embeds a **real CPython interpreter** via
+[Chaquopy](https://chaquo.com/chaquopy/), so Python runs natively — `input()`
+works interactively, files can be read and written, and `import` finds other
+files in your project.
 
 - **Download:** open the [**Cursive latest**](../../releases/latest) release and
 tap **Cursive.apk**.
@@ -108,6 +113,13 @@ browser if prompted, then tap Install.
 Every push to `main` rebuilds the APK automatically
 (`.github/workflows/android.yml`) and republishes it to the *Cursive latest*
 release.
+
+### Rebuilding the bundled web bundle
+
+```bash
+npm run build:android   # writes the static editor to out/
+npx cap sync android     # copies out/ into the Android project
+```
 
 ### Rebuilding icons / splash screens
 

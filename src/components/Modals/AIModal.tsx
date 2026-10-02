@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { FileItem } from "@/types";
+import { generateSmartCodeAssistance } from "@/lib/ai-fallback";
 import {
   Sparkles,
   X,
@@ -58,15 +59,27 @@ export const AIModal: React.FC<AIModalProps> = ({
         }),
       });
 
+      if (!res.ok) throw new Error(`AI service returned ${res.status}`);
+
       const data = await res.json();
       if (data.result) {
         setAiResult(data.result);
         setEngineUsed(data.engine || "AI Assistant");
       } else {
-        setAiResult(data.error || "Failed to generate AI response.");
+        throw new Error(data.error || "Empty AI response");
       }
-    } catch (err: any) {
-      setAiResult("Error calling AI service: " + err.message);
+    } catch {
+      // Bundled/offline mode: there is no `/api/ai` server in the APK, so
+      // generate the answer locally instead of surfacing a network error.
+      setAiResult(
+        generateSmartCodeAssistance(
+          selectedAction,
+          activeFile.language,
+          activeFile.content,
+          customPrompt
+        )
+      );
+      setEngineUsed("Built-in assistant (offline)");
     } finally {
       setIsLoading(false);
     }

@@ -9,6 +9,9 @@ out/
 build/
 dist/
 
+# Monaco runtime copied in by scripts/copy-monaco.mjs
+public/monaco/
+
 # Environment files
 .env.local
 .env.development.local
