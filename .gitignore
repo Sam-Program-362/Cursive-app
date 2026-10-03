@@ -12,6 +12,11 @@ dist/
 # Monaco runtime copied in by scripts/copy-monaco.mjs
 public/monaco/
 
+# Signing keys must never be committed (kept in GitHub Actions secrets)
+*.keystore
+*.jks
+*.p12
+
 # Environment files
 .env.local
 .env.development.local

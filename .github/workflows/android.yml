@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build-apk:
-    name: Build debug APK
+    name: Build signed release APK
     runs-on: ubuntu-latest
 
     steps:
@@ -54,16 +54,37 @@ jobs:
       - name: Sync Capacitor Android project
         run: npx cap sync android
 
-      - name: Build APK
+      # Materialise the ONE permanent signing key from the repo secret. If the
+      # secret is missing we stop loudly rather than publish a differently-
+      # signed APK that users could not install over their existing Cursive.
+      - name: Prepare signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::Repository secret SIGNING_KEYSTORE_BASE64 is not set. Add the permanent signing keystore (see docs/signing-setup.md)."
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/cursive-release.keystore"
+          "$JAVA_HOME/bin/keytool" -list -keystore "$RUNNER_TEMP/cursive-release.keystore" -storepass "$SIGNING_PASSWORD" > /dev/null
+          echo "Signing keystore is valid."
+
+      - name: Build signed release APK
         working-directory: android
+        env:
+          CURSIVE_KEYSTORE_FILE: ${{ runner.temp }}/cursive-release.keystore
+          CURSIVE_STORE_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+          CURSIVE_KEY_ALIAS: cursive
+          CURSIVE_KEY_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Stage APK
         run: |
           mkdir -p dist
-          cp android/app/build/outputs/apk/debug/app-debug.apk dist/Cursive.apk
+          cp android/app/build/outputs/apk/release/app-release.apk dist/Cursive.apk
           ls -la dist
 
       - name: Upload APK artifact
