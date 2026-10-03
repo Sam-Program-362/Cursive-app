@@ -17,6 +17,13 @@ const config: CapacitorConfig = {
     backgroundColor: "#1a1b2e",
     allowMixedContent: false,
   },
+  plugins: {
+    // Route calls to external APIs (GitHub, AI providers) through the native
+    // HTTP bridge so they are not blocked by WebView CORS rules.
+    CapacitorHttp: {
+      enabled: true,
+    },
+  },
 };
 
 export default config;

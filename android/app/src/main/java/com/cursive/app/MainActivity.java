@@ -7,8 +7,9 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        // Register before super.onCreate so the bridge picks it up at startup.
+        // Register before super.onCreate so the bridge picks them up at startup.
         registerPlugin(PythonRunnerPlugin.class);
+        registerPlugin(SecureStorePlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
