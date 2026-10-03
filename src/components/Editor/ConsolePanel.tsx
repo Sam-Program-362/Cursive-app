@@ -95,17 +95,6 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
     5000
   );
 
-  // Process stdout chunks as they arrive; re-render only changed lines.
-  const pushOutput = useCallback(
-    (chunk: string) => {
-      terminal.push(chunk);
-    },
-    [terminal]
-  );
-
-  // Reset the terminal when a new run starts (result changes).
-  const lastResultId = result?.stdout?.length ?? 0;
-
   // --- Panel layout state -------------------------------------------------
   const [panelWidth, setPanelWidth] = useState(() => loadConsolePrefs().width);
   const [isMaximized, setIsMaximized] = useState(false);
@@ -308,13 +297,16 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
   );
 
   // When a new run starts (result changes), push the complete stdout to the
-  // emulator. The emulator's push() handles \.r, \b, ANSI, etc. and returns
+  // emulator. The emulator's push() handles \r, \b, ANSI, etc. and returns
   // the changed-line range, so the UI only re-renders what changed.
+  // NOTE: terminal.push is stable (memoized with fallbackColor/maxLines),
+  // so it is not included in the dependency array to avoid re-running on
+  // every render.
   useEffect(() => {
     if (result?.stdout) {
       terminal.push(result.stdout);
     }
-  }, [result?.stdout, terminal]);
+  }, [result?.stdout, terminal.push]);
 
   /* ------------------------------------------------------------------ */
   /* Shared panel body — identical content in both layouts               */
