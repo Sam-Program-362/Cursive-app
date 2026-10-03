@@ -10,6 +10,7 @@ public class MainActivity extends BridgeActivity {
         // Register before super.onCreate so the bridge picks them up at startup.
         registerPlugin(PythonRunnerPlugin.class);
         registerPlugin(SecureStorePlugin.class);
+        registerPlugin(DeviceFilesPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

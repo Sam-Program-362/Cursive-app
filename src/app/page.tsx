@@ -51,6 +51,13 @@ import { SettingsModal } from "@/components/Modals/SettingsModal";
 import { AIModal } from "@/components/Modals/AIModal";
 import { GitHubModal } from "@/components/Modals/GitHubModal";
 import { TemplatesModal } from "@/components/Modals/TemplatesModal";
+import { DeviceFilesModal } from "@/components/Modals/DeviceFilesModal";
+import {
+  getLaunchFile,
+  writeDeviceText,
+  isDeviceFilesAvailable,
+  type DeviceFile,
+} from "@/lib/device-files";
 import { Loader2 } from "lucide-react";
 
 // Dynamically load CodeEditor on client
@@ -87,6 +94,8 @@ export default function CursiveApp() {
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [isGitHubModalOpen, setIsGitHubModalOpen] = useState(false);
   const [isTemplatesModalOpen, setIsTemplatesModalOpen] = useState(false);
+  // Device file browser (Android): null = closed, otherwise the mode.
+  const [deviceModalMode, setDeviceModalMode] = useState<"open" | "save" | null>(null);
 
   // Read-only sample programs opened from the Examples list. They live here
   // (not in `files`) so they are never saved, synced or listed as your files.
@@ -110,6 +119,7 @@ export default function CursiveApp() {
   );
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const editorRef = useRef<any>(null);
+  const launchFileHandledRef = useRef(false);
 
   // Responsive: auto-close sidebar on smaller screens on initial mount
   useEffect(() => {
@@ -706,6 +716,52 @@ export default function CursiveApp() {
     }
   };
 
+  // Open a real device file in the editor (adds it to the current project).
+  const handleOpenDeviceFile = (deviceFile: DeviceFile) => {
+    if (!activeProjectId) return;
+    const now = new Date().toISOString();
+    const lang = getLanguageByFilename(deviceFile.name);
+    const newFile: FileItem = {
+      id: `file_dev_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      projectId: activeProjectId,
+      name: deviceFile.name,
+      path: `/${deviceFile.name}`,
+      language: lang.id,
+      content: deviceFile.content,
+      notes: `Opened from ${deviceFile.path}`,
+      isFolder: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const updated = [...files, newFile];
+    setFiles(updated);
+    saveFilesLocal(updated);
+    syncFileToNeon(newFile);
+    handleSelectFile(newFile.id);
+  };
+
+  // Save the open file to a real path on the device.
+  const handleSaveToDeviceTarget = async (path: string) => {
+    if (!activeFile) throw new Error("No file is open.");
+    await writeDeviceText(path, activeFile.content ?? "");
+    setFiles((prev) =>
+      prev.map((f) => (f.id === activeFile.id ? { ...f, isDirty: false } : f))
+    );
+    setSaveStatus("saved");
+  };
+
+  // If the app was opened with a .py file (shared from another app), load it.
+  useEffect(() => {
+    if (launchFileHandledRef.current || !activeProjectId) return;
+    if (!isDeviceFilesAvailable()) return;
+    launchFileHandledRef.current = true;
+    (async () => {
+      const file = await getLaunchFile();
+      if (file) handleOpenDeviceFile(file);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProjectId]);
+
   // Export workspace as ZIP file
   const handleExportZip = async () => {
     if (!activeProject) return;
@@ -769,6 +825,9 @@ export default function CursiveApp() {
         onOpenGitHub={() => setIsGitHubModalOpen(true)}
         onOpenTemplates={() => setIsTemplatesModalOpen(true)}
         onExportZip={handleExportZip}
+        showDeviceButtons={isDeviceFilesAvailable()}
+        onOpenDeviceFile={() => setDeviceModalMode("open")}
+        onSaveToDevice={() => setDeviceModalMode("save")}
       />
 
       {/* Main Workspace Body */}
@@ -903,6 +962,15 @@ export default function CursiveApp() {
         onSelectTemplate={handleSelectTemplate}
         onSelectSnippet={handleCreateFromTemplate}
         snippets={NEW_FILE_TEMPLATES}
+      />
+
+      <DeviceFilesModal
+        isOpen={deviceModalMode !== null}
+        mode={deviceModalMode === "save" ? "save" : "open"}
+        defaultFileName={activeFile?.name}
+        onClose={() => setDeviceModalMode(null)}
+        onOpenFile={handleOpenDeviceFile}
+        onSaveFile={handleSaveToDeviceTarget}
       />
 
       {/* Unsaved-changes sheet shown when closing a dirty tab */}

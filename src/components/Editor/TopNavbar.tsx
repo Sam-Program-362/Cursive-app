@@ -17,6 +17,8 @@ import {
   Layers,
   Code2,
   FolderOpen,
+  FolderInput,
+  HardDriveDownload,
 } from "lucide-react";
 
 interface TopNavbarProps {
@@ -37,6 +39,10 @@ interface TopNavbarProps {
   onOpenGitHub: () => void;
   onOpenTemplates: () => void;
   onExportZip: () => void;
+  /** Device file browser (Android only). */
+  showDeviceButtons?: boolean;
+  onOpenDeviceFile?: () => void;
+  onSaveToDevice?: () => void;
 }
 
 export const TopNavbar: React.FC<TopNavbarProps> = ({
@@ -57,6 +63,9 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
   onOpenGitHub,
   onOpenTemplates,
   onExportZip,
+  showDeviceButtons,
+  onOpenDeviceFile,
+  onSaveToDevice,
 }) => {
   return (
     <header className="h-12 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-3 select-none shrink-0 z-30">
@@ -185,6 +194,29 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
             <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-amber-400" />
           )}
         </button>
+
+        {/* Device file browser (Android) */}
+        {showDeviceButtons && (
+          <>
+            <button
+              type="button"
+              onClick={onOpenDeviceFile}
+              title="Open a file from this device"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"
+            >
+              <FolderInput className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={onSaveToDevice}
+              disabled={!activeFile}
+              title="Save this file to the device"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 disabled:opacity-40 transition-colors"
+            >
+              <HardDriveDownload className="w-4 h-4" />
+            </button>
+          </>
+        )}
 
         {/* GitHub Sync */}
         <button
