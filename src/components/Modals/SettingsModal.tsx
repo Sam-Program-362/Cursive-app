@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { EditorSettings } from "@/types";
 import {
   Settings,
@@ -11,7 +11,19 @@ import {
   Zap,
   Sliders,
   Check,
+  KeyRound,
+  ExternalLink,
+  Loader2,
+  Trash2,
 } from "lucide-react";
+import {
+  AI_PROVIDERS,
+  getAiConfig,
+  saveAiConfig,
+  clearAiKey,
+  getProviderMeta,
+  type AiProvider,
+} from "@/lib/ai-client";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -308,6 +320,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </button>
             </div>
           </div>
+
+          {/* AI Assistant (bring your own key) */}
+          <AiSettingsSection />
         </div>
 
         {/* Footer */}
@@ -319,6 +334,167 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           >
             Done
           </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Bring-your-own-key AI setup. The key is stored encrypted on the device via
+ * the secret store; only the provider/model choice is plain preference data.
+ */
+const AiSettingsSection: React.FC = () => {
+  const [provider, setProvider] = useState<AiProvider>("openai");
+  const [model, setModel] = useState(getProviderMeta("openai").defaultModel);
+  const [keyInput, setKeyInput] = useState("");
+  const [hasKey, setHasKey] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const refresh = async (nextProvider?: AiProvider) => {
+    const config = await getAiConfig();
+    const active = nextProvider || config.provider;
+    setProvider(active);
+    setModel(nextProvider ? getProviderMeta(active).defaultModel : config.model);
+    setHasKey(nextProvider ? false : config.hasKey);
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  const meta = getProviderMeta(provider);
+
+  const handleProviderChange = (next: AiProvider) => {
+    setMessage(null);
+    setKeyInput("");
+    void refresh(next).then(() => setProvider(next));
+  };
+
+  const handleSave = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await saveAiConfig({ provider, model: model.trim() || meta.defaultModel, apiKey: keyInput });
+      setKeyInput("");
+      await refresh(provider);
+      setMessage("Saved. The AI assistant will use your key from now on.");
+    } catch {
+      setMessage("Couldn't save the key. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRemove = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await clearAiKey(provider);
+      await refresh(provider);
+      setMessage("Key removed. The editor falls back to the built-in offline assistant.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300 uppercase tracking-wider">
+        <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+        <span>AI Assistant (bring your own key)</span>
+      </div>
+
+      <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800/80 space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-slate-300 font-medium">Provider</span>
+          <span
+            className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+              hasKey
+                ? "bg-emerald-950/60 border border-emerald-800/60 text-emerald-300"
+                : "bg-slate-800 text-slate-400"
+            }`}
+          >
+            {hasKey ? "Key saved" : "Offline assistant"}
+          </span>
+        </div>
+
+        <select
+          value={provider}
+          onChange={(e) => handleProviderChange(e.target.value as AiProvider)}
+          className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-purple-500"
+        >
+          {AI_PROVIDERS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+
+        <div className="space-y-1">
+          <label className="text-[11px] text-slate-400">Model</label>
+          <input
+            type="text"
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            placeholder={meta.defaultModel}
+            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-purple-500"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] text-slate-400">
+            API key {hasKey ? "(saved — paste a new one to replace it)" : ""}
+          </label>
+          <input
+            type="password"
+            value={keyInput}
+            onChange={(e) => setKeyInput(e.target.value)}
+            placeholder={meta.keyPlaceholder}
+            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-purple-500"
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={busy}
+            className="flex-1 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+          >
+            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
+            <span>Save key</span>
+          </button>
+          {hasKey && (
+            <button
+              type="button"
+              onClick={handleRemove}
+              disabled={busy}
+              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300"
+              title="Remove saved key"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {message && <p className="text-[11px] text-slate-400">{message}</p>}
+
+        <div className="text-[11px] text-slate-400 space-y-1">
+          <p>{meta.note}</p>
+          <a
+            href={meta.docsUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-purple-400 hover:underline"
+          >
+            <span>Get a {meta.label} API key</span>
+            <ExternalLink className="w-3 h-3" />
+          </a>
+          <p className="text-slate-500">
+            Your key is stored encrypted on this device and sent only to the provider.
+          </p>
         </div>
       </div>
     </div>

@@ -1,8 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { FileItem } from "@/types";
 import { generateSmartCodeAssistance } from "@/lib/ai-fallback";
+import { generateAiAssistance, getAiConfig } from "@/lib/ai-client";
+import { useOnlineStatus } from "@/lib/use-online-status";
 import {
   Sparkles,
   X,
@@ -15,6 +17,8 @@ import {
   Wrench,
   RotateCcw,
   Loader2,
+  AlertCircle,
+  KeyRound,
 } from "lucide-react";
 
 interface AIModalProps {
@@ -23,6 +27,7 @@ interface AIModalProps {
   onClose: () => void;
   onInsertCode: (code: string) => void;
   onReplaceCode: (code: string) => void;
+  onOpenSettings?: () => void;
 }
 
 export const AIModal: React.FC<AIModalProps> = ({
@@ -31,13 +36,28 @@ export const AIModal: React.FC<AIModalProps> = ({
   onClose,
   onInsertCode,
   onReplaceCode,
+  onOpenSettings,
 }) => {
+  const online = useOnlineStatus();
   const [prompt, setPrompt] = useState("");
   const [action, setAction] = useState<"complete" | "explain" | "fix" | "refactor" | "custom">("complete");
   const [isLoading, setIsLoading] = useState(false);
   const [aiResult, setAiResult] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [engineUsed, setEngineUsed] = useState<string>("");
+  const [configured, setConfigured] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    getAiConfig().then((config) => {
+      if (!cancelled) setConfigured(config.hasKey);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -46,31 +66,10 @@ export const AIModal: React.FC<AIModalProps> = ({
 
     setIsLoading(true);
     setAiResult(null);
+    setError(null);
 
-    try {
-      const res = await fetch("/api/ai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: selectedAction,
-          language: activeFile.language,
-          code: activeFile.content,
-          prompt: customPrompt,
-        }),
-      });
-
-      if (!res.ok) throw new Error(`AI service returned ${res.status}`);
-
-      const data = await res.json();
-      if (data.result) {
-        setAiResult(data.result);
-        setEngineUsed(data.engine || "AI Assistant");
-      } else {
-        throw new Error(data.error || "Empty AI response");
-      }
-    } catch {
-      // Bundled/offline mode: there is no `/api/ai` server in the APK, so
-      // generate the answer locally instead of surfacing a network error.
+    // Offline: use the built-in assistant so the feature still works.
+    if (!online) {
       setAiResult(
         generateSmartCodeAssistance(
           selectedAction,
@@ -80,6 +79,22 @@ export const AIModal: React.FC<AIModalProps> = ({
         )
       );
       setEngineUsed("Built-in assistant (offline)");
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const response = await generateAiAssistance(
+        selectedAction,
+        activeFile.language,
+        activeFile.content,
+        customPrompt
+      );
+      setAiResult(response.result);
+      setEngineUsed(response.engine);
+      if (response.usedFallback) setConfigured(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The AI request failed.");
     } finally {
       setIsLoading(false);
     }
@@ -214,6 +229,37 @@ export const AIModal: React.FC<AIModalProps> = ({
             </button>
           </div>
         </div>
+
+        {(error || !configured) && (
+          <div className="px-4 pt-3 space-y-2">
+            {error && (
+              <div className="p-3 rounded-xl border border-red-800/60 bg-red-950/40 text-xs text-red-300 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
+                <span>{error}</span>
+              </div>
+            )}
+            {!configured && (
+              <div className="p-3 rounded-xl border border-purple-800/50 bg-purple-950/30 text-xs text-purple-200 flex items-center justify-between gap-3">
+                <span className="flex items-start gap-2">
+                  <KeyRound className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>
+                    Using the built-in offline assistant. Add your own API key (OpenAI,
+                    Claude or Gemini) for real AI that understands your code.
+                  </span>
+                </span>
+                {onOpenSettings && (
+                  <button
+                    type="button"
+                    onClick={onOpenSettings}
+                    className="shrink-0 px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-semibold"
+                  >
+                    AI settings
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* AI Output Area */}
         <div className="flex-1 overflow-y-auto p-4 bg-slate-950/60 font-mono text-xs text-slate-200 min-h-[160px]">

@@ -946,6 +946,10 @@ export default function CursiveApp() {
         onClose={() => setIsAIModalOpen(false)}
         onInsertCode={(code) => handleInsertText("\n" + code)}
         onReplaceCode={(code) => handleContentChange(code)}
+        onOpenSettings={() => {
+          setIsAIModalOpen(false);
+          setIsSettingsModalOpen(true);
+        }}
       />
 
       <GitHubModal
