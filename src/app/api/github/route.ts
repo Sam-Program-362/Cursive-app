@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
 
     const headers: Record<string, string> = {
       Accept: "application/vnd.github.v3+json",
-      "User-Agent": "CodePad-Editor",
+      "User-Agent": "Cursive-Editor",
     };
 
     if (authToken && authToken !== "arena-egress-dummy-token") {
@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
           method: "PUT",
           headers,
           body: JSON.stringify({
-            message: message || `Update ${cleanPath} via CodePad`,
+            message: message || `Update ${cleanPath} via Cursive`,
             content: encodedContent,
             branch,
             sha,

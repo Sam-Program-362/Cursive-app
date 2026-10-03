@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { FileItem, Project } from "@/types";
+import { ExampleProgram } from "@/lib/examples";
 import {
   Folder,
   FolderOpen,
@@ -19,6 +20,8 @@ import {
   MoreVertical,
   X,
   Sparkles,
+  BookOpen,
+  Lock,
 } from "lucide-react";
 
 interface FileTreeProps {
@@ -31,6 +34,9 @@ interface FileTreeProps {
   onDeleteFile: (fileId: string) => void;
   onCloseSidebar?: () => void;
   onOpenTemplates?: () => void;
+  /** Read-only sample programs, kept separate from the user's own files. */
+  examples?: ExampleProgram[];
+  onSelectExample?: (example: ExampleProgram) => void;
 }
 
 export const FileTree: React.FC<FileTreeProps> = ({
@@ -43,8 +49,11 @@ export const FileTree: React.FC<FileTreeProps> = ({
   onDeleteFile,
   onCloseSidebar,
   onOpenTemplates,
+  examples = [],
+  onSelectExample,
 }) => {
   const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({});
+  const [examplesOpen, setExamplesOpen] = useState(true);
   const [editingFileId, setEditingFileId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [isCreating, setIsCreating] = useState<"file" | "folder" | null>(null);
@@ -236,6 +245,50 @@ export const FileTree: React.FC<FileTreeProps> = ({
             >
               + Create first file
             </button>
+          </div>
+        )}
+
+        {/* Read-only Examples — separate from the user's own files. */}
+        {examples.length > 0 && onSelectExample && (
+          <div className="mt-2 pt-2 border-t border-slate-800/70">
+            <button
+              type="button"
+              onClick={() => setExamplesOpen((v) => !v)}
+              className="w-full flex items-center gap-1.5 px-2 py-1 text-[10px] uppercase tracking-wider font-semibold text-slate-400 hover:text-slate-200"
+            >
+              {examplesOpen ? (
+                <ChevronDown className="w-3 h-3" />
+              ) : (
+                <ChevronRight className="w-3 h-3" />
+              )}
+              <BookOpen className="w-3.5 h-3.5 text-sky-400" />
+              Examples
+              <span className="ml-auto text-slate-600 normal-case font-normal">
+                read-only
+              </span>
+            </button>
+
+            {examplesOpen && (
+              <div className="mt-0.5 space-y-0.5">
+                {examples.map((ex) => (
+                  <button
+                    key={ex.id}
+                    type="button"
+                    title={ex.description}
+                    onClick={() => onSelectExample(ex)}
+                    className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded text-left text-[11px] font-mono text-slate-300 hover:bg-slate-800/60 hover:text-slate-100 transition-colors"
+                  >
+                    {getFileIcon({
+                      name: ex.name,
+                      language: ex.language,
+                      isFolder: false,
+                    } as FileItem)}
+                    <span className="truncate flex-1">{ex.name}</span>
+                    <Lock className="w-3 h-3 text-slate-600 shrink-0" />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

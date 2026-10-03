@@ -19,13 +19,13 @@ export const SUPPORTED_LANGUAGES: LanguageConfig[] = [
     extensions: [".py", ".pyw", ".pyi"],
     isRunnable: true,
     runtime: "pyodide",
-    sampleCode: `# Welcome to CodePad (Python 3)
+    sampleCode: `# Welcome to Cursive (Python 3)
 def greet(name: str) -> str:
     return f"Hello, {name}! 🚀"
 
 def main():
     print("=" * 35)
-    print("Welcome to CodePad Python Environment")
+    print("Welcome to Cursive Python Environment")
     print("=" * 35)
     
     user = "Developer"
@@ -49,7 +49,7 @@ if __name__ == "__main__":
     extensions: [".js", ".mjs", ".cjs"],
     isRunnable: true,
     runtime: "browser-js",
-    sampleCode: `// Welcome to CodePad (JavaScript)
+    sampleCode: `// Welcome to Cursive (JavaScript)
 function calculateStats(numbers) {
   const sum = numbers.reduce((acc, curr) => acc + curr, 0);
   const avg = sum / numbers.length;
@@ -58,7 +58,7 @@ function calculateStats(numbers) {
   return { sum, avg, max, min };
 }
 
-console.log("🚀 CodePad JS Runtime Active!");
+console.log("🚀 Cursive JS Runtime Active!");
 const data = [12, 45, 67, 23, 89, 34, 91, 15];
 const stats = calculateStats(data);
 
@@ -74,7 +74,7 @@ console.log("Computed Stats:", JSON.stringify(stats, null, 2));
     isRunnable: false,
     runtime: null,
     comingSoon: true,
-    sampleCode: `// Welcome to CodePad (TypeScript)
+    sampleCode: `// Welcome to Cursive (TypeScript)
 interface User {
   id: number;
   name: string;
@@ -104,7 +104,7 @@ console.log(\`User \${user.name} (\${user.role}) has skills: \${user.skills.join
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CodePad Web Preview</title>
+  <title>Cursive Web Preview</title>
   <style>
     body {
       font-family: system-ui, -apple-system, sans-serif;
@@ -145,9 +145,9 @@ console.log(\`User \${user.name} (\${user.role}) has skills: \${user.skills.join
 </head>
 <body>
   <div class="card">
-    <h2>🚀 CodePad Live Preview</h2>
+    <h2>🚀 Cursive Live Preview</h2>
     <p>Edit this HTML file and press <strong>Run</strong> to see live changes instantly!</p>
-    <button onclick="alert('Hello from CodePad!')">Click Me</button>
+    <button onclick="alert('Hello from Cursive!')">Click Me</button>
   </div>
 </body>
 </html>
@@ -187,7 +187,7 @@ body {
 #include <numeric>
 
 int main() {
-    std::cout << "🚀 CodePad C++ Environment\\n";
+    std::cout << "🚀 Cursive C++ Environment\\n";
     std::vector<int> nums = {10, 20, 30, 40, 50};
     int sum = std::accumulate(nums.begin(), nums.end(), 0);
     std::cout << "Sum of elements: " << sum << std::endl;
@@ -206,7 +206,7 @@ int main() {
     sampleCode: `#include <stdio.h>
 
 int main() {
-    printf("🚀 Hello from CodePad C Compiler!\\n");
+    printf("🚀 Hello from Cursive C Compiler!\\n");
     for (int i = 1; i <= 5; i++) {
         printf("Iteration #%d: Square = %d\\n", i, i * i);
     }
@@ -223,7 +223,7 @@ int main() {
     runtime: null,
     comingSoon: true,
     sampleCode: `fn main() {
-    println!("🚀 Hello from CodePad Rust Runner!");
+    println!("🚀 Hello from Cursive Rust Runner!");
     let primes = vec![2, 3, 5, 7, 11, 13, 17, 19];
     let sum: i32 = primes.iter().sum();
     println!("Sum of first {} primes: {}", primes.len(), sum);
@@ -259,7 +259,7 @@ int main() {
     runtime: null,
     sampleCode: `# 📝 Project Notes
 
-Welcome to **CodePad**!
+Welcome to **Cursive**!
 
 ### Features
 - ⚡ **Monaco Editor** with VS Code IntelliSense

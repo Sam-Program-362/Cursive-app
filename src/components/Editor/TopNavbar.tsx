@@ -81,7 +81,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
               <Code2 className="w-3.5 h-3.5" />
             </div>
             <span className="hidden sm:inline bg-gradient-to-r from-white via-slate-200 to-blue-400 bg-clip-text text-transparent">
-              CodePad
+              Cursive
             </span>
           </div>
 

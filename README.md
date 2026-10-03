@@ -1,6 +1,6 @@
-# 🚀 CodePad — Mobile-Friendly Web Code Editor
+# 🚀 Cursive — Mobile-Friendly Web Code Editor
 
-**CodePad** is a responsive, browser-based code editor web app built with Next.js (App Router), Monaco Editor, Neon PostgreSQL (Drizzle ORM), GitHub Integration, and in-browser Code Execution.
+**Cursive** is a responsive, browser-based code editor web app built with Next.js (App Router), Monaco Editor, Neon PostgreSQL (Drizzle ORM), GitHub Integration, and in-browser Code Execution.
 
 ---
 
@@ -39,7 +39,7 @@
 7. **Save & Sync**
    - Automatic debounced background saving to Neon DB & localStorage
    - **Push to GitHub**: Commit & push workspace files directly to GitHub repositories
-   - **Pull from GitHub**: Import public or private repository trees into CodePad
+   - **Pull from GitHub**: Import public or private repository trees into Cursive
    - **Export as ZIP**: One-click download of the entire workspace
 
 8. **Code Execution (In-Browser Runner)**
@@ -88,7 +88,7 @@ npm install
 npm run dev
 ```
 
-Visit [http://localhost:3000](http://localhost:3000) to open CodePad.
+Visit [http://localhost:3000](http://localhost:3000) to open Cursive.
 
 ---
 

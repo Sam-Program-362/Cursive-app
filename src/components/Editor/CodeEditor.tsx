@@ -166,6 +166,8 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           parameterHints: { enabled: settings.parameterHints },
           suggestOnTriggerCharacters: true,
           acceptSuggestionOnEnter: "on",
+          // Read-only example files can be viewed and run but not edited.
+          readOnly: Boolean(file.readOnly),
           scrollBeyondLastLine: true,
           smoothScrolling: true,
           renderWhitespace: settings.showInvisibles ? "all" : "selection",

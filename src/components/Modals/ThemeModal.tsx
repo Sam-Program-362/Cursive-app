@@ -194,7 +194,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
                   greet() {"{"}
                   <br />
                   &nbsp;&nbsp;console.log(
-                  <span style={{ color: "#34d399" }}>"Hello CodePad!"</span>);
+                  <span style={{ color: "#34d399" }}>"Hello Cursive!"</span>);
                   <br />
                   {"}"}
                 </div>

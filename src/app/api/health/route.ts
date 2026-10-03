@@ -7,7 +7,7 @@ export async function GET() {
 
   return NextResponse.json({
     status: "ok",
-    appName: "CodePad",
+    appName: "Cursive",
     dbConnected: dbConfigured && db !== null,
     dbConfigured,
     timestamp: new Date().toISOString(),

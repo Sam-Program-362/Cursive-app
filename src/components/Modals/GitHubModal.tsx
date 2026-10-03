@@ -33,7 +33,7 @@ export const GitHubModal: React.FC<GitHubModalProps> = ({
   const [token, setToken] = useState("");
   const [repo, setRepo] = useState(project?.githubRepo || "");
   const [branch, setBranch] = useState(project?.githubBranch || "main");
-  const [commitMessage, setCommitMessage] = useState("Update files via CodePad");
+  const [commitMessage, setCommitMessage] = useState("Update files via Cursive");
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{
     type: "success" | "error";
@@ -289,7 +289,7 @@ export const GitHubModal: React.FC<GitHubModalProps> = ({
           {activeTab === "pull" && (
             <div className="space-y-3">
               <p className="text-xs text-slate-400">
-                Import code files from any public or private GitHub repository into CodePad.
+                Import code files from any public or private GitHub repository into Cursive.
               </p>
 
               <div className="space-y-1">
@@ -329,7 +329,7 @@ export const GitHubModal: React.FC<GitHubModalProps> = ({
                 ) : (
                   <DownloadCloud className="w-4 h-4" />
                 )}
-                <span>Pull Repository into CodePad</span>
+                <span>Pull Repository into Cursive</span>
               </button>
             </div>
           )}

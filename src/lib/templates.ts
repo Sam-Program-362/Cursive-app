@@ -22,7 +22,7 @@ export const STARTER_TEMPLATES: ProjectTemplate[] = [
         path: "/main.py",
         language: "python",
         isFolder: false,
-        content: `# CodePad Python 3 Playground 🚀
+        content: `# Cursive Python 3 Playground 🚀
 import math
 import time
 
@@ -48,7 +48,7 @@ def benchmark_primes(limit=1000):
 
 if __name__ == "__main__":
     print("=" * 40)
-    print("  🚀 CodePad Python 3 Execution Demo")
+    print("  🚀 Cursive Python 3 Execution Demo")
     print("=" * 40)
     
     # 1. Quadratic Equation Demo
@@ -85,7 +85,7 @@ def chunk_list(lst, chunk_size):
         path: "/README.md",
         language: "markdown",
         isFolder: false,
-        content: `# Python 3 CodePad Workspace
+        content: `# Python 3 Cursive Workspace
 
 Press the **Run** button (or Ctrl+Enter) to run \`main.py\` right in your browser (Pyodide)!
 
@@ -98,7 +98,7 @@ Use the **Notepad** panel on the right to keep separate notes for each file.
   {
     id: "web-starter",
     name: "Interactive Web App (HTML/CSS/JS)",
-    description: "Responsive interactive web page with live preview in CodePad",
+    description: "Responsive interactive web page with live preview in Cursive",
     icon: "🌐",
     language: "html",
     files: [
@@ -112,12 +112,12 @@ Use the **Notepad** panel on the right to keep separate notes for each file.
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CodePad Dynamic Counter</title>
+  <title>Cursive Dynamic Counter</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="card">
-    <div class="badge">CodePad Live Preview</div>
+    <div class="badge">Cursive Live Preview</div>
     <h1>⚡ Interactive Counter</h1>
     <p class="subtitle">Edit files and click Run to test!</p>
     
@@ -328,7 +328,7 @@ struct Student {
 };
 
 int main() {
-    std::cout << "🚀 CodePad C++ Compiler\\n";
+    std::cout << "🚀 Cursive C++ Compiler\\n";
     std::cout << "=========================\\n";
     
     std::vector<Student> students = {

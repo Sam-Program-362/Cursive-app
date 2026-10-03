@@ -31,6 +31,12 @@ import {
   stopNativePython,
 } from "@/lib/runtime";
 import { STARTER_TEMPLATES, ProjectTemplate } from "@/lib/templates";
+import {
+  NEW_FILE_TEMPLATES,
+  NewFileTemplate,
+  EXAMPLE_PROGRAMS,
+  ExampleProgram,
+} from "@/lib/examples";
 import { THEMES } from "@/lib/themes";
 
 import { TopNavbar } from "@/components/Editor/TopNavbar";
@@ -61,7 +67,7 @@ const CodeEditor = dynamic(
   }
 );
 
-export default function CodePadApp() {
+export default function CursiveApp() {
   const [mounted, setMounted] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -81,6 +87,12 @@ export default function CodePadApp() {
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [isGitHubModalOpen, setIsGitHubModalOpen] = useState(false);
   const [isTemplatesModalOpen, setIsTemplatesModalOpen] = useState(false);
+
+  // Read-only sample programs opened from the Examples list. They live here
+  // (not in `files`) so they are never saved, synced or listed as your files.
+  const [exampleTabs, setExampleTabs] = useState<FileItem[]>([]);
+  // Tab waiting on Save / Don't save / Cancel when being closed.
+  const [pendingCloseFile, setPendingCloseFile] = useState<FileItem | null>(null);
 
   // Execution state
   const [isRunning, setIsRunning] = useState(false);
@@ -130,7 +142,10 @@ export default function CodePadApp() {
 
   const activeProject =
     projects.find((p) => p.id === activeProjectId) || projects[0] || null;
-  const activeFile = files.find((f) => f.id === activeFileId) || null;
+  const activeFile =
+    files.find((f) => f.id === activeFileId) ||
+    exampleTabs.find((f) => f.id === activeFileId) ||
+    null;
 
   // Auto-save handler
   const scheduleSave = useCallback(
@@ -238,6 +253,7 @@ export default function CodePadApp() {
 
   // Close open tab
   const handleCloseTab = (fileIdToClose: string) => {
+    setExampleTabs((prev) => prev.filter((f) => f.id !== fileIdToClose));
     const updated = openFileIds.filter((id) => id !== fileIdToClose);
     setOpenFileIds(updated);
 
@@ -268,7 +284,8 @@ export default function CodePadApp() {
       name,
       path: `/${name}`,
       language: lang.id,
-      content: isFolder ? "" : lang.sampleCode || "",
+      // New files start BLANK (no sample code inserted).
+      content: "",
       notes: "",
       isFolder,
       parentId: parentId || null,
@@ -284,6 +301,92 @@ export default function CodePadApp() {
     if (!isFolder) {
       handleSelectFile(newId);
     }
+  };
+
+  // Create a file from an optional starter snippet ("New from template").
+  // Normal new files are always blank; this only runs when the user picks one.
+  const handleCreateFromTemplate = (template: NewFileTemplate) => {
+    if (!activeProjectId) return;
+    const newId = `file_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const now = new Date().toISOString();
+    const newFile: FileItem = {
+      id: newId,
+      projectId: activeProjectId,
+      name: template.fileName,
+      path: `/${template.fileName}`,
+      language: template.language,
+      content: template.content,
+      notes: "",
+      isFolder: false,
+      parentId: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const updated = [...files, newFile];
+    setFiles(updated);
+    saveFilesLocal(updated);
+    syncFileToNeon(newFile);
+    handleSelectFile(newId);
+    setIsTemplatesModalOpen(false);
+  };
+
+  // Open a read-only sample program in its own tab.
+  const handleSelectExample = (example: ExampleProgram) => {
+    const id = `example__${example.id}`;
+    setExampleTabs((prev) => {
+      if (prev.some((f) => f.id === id)) return prev;
+      const now = new Date().toISOString();
+      return [
+        ...prev,
+        {
+          id,
+          projectId: "examples",
+          name: example.name,
+          path: `/${example.name}`,
+          language: example.language,
+          content: example.content,
+          notes: "",
+          isFolder: false,
+          parentId: null,
+          readOnly: true,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ];
+    });
+    setOpenFileIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    setActiveFileId(id);
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      setIsSidebarOpen(false);
+    }
+  };
+
+  // A dirty tab was confirmed for closing — ask before losing the changes.
+  const handleRequestCloseDirty = (file: FileItem) => {
+    setPendingCloseFile(file);
+  };
+
+  const handleSaveAndClose = () => {
+    if (!pendingCloseFile) return;
+    setFiles((prev) => {
+      const updated = prev.map((f) =>
+        f.id === pendingCloseFile.id
+          ? { ...f, isDirty: false, updatedAt: new Date().toISOString() }
+          : f
+      );
+      saveFilesLocal(updated);
+      return updated;
+    });
+    const closing = pendingCloseFile;
+    setPendingCloseFile(null);
+    handleCloseTab(closing.id);
+  };
+
+  const handleDiscardAndClose = () => {
+    if (!pendingCloseFile) return;
+    const closing = pendingCloseFile;
+    setPendingCloseFile(null);
+    handleCloseTab(closing.id);
   };
 
   // Rename file or folder
@@ -633,7 +736,7 @@ export default function CodePadApp() {
       <div className="flex h-screen w-full items-center justify-center bg-slate-950 text-slate-400">
         <div className="flex items-center gap-3">
           <div className="w-5 h-5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
-          <span className="text-sm font-medium">Initializing CodePad...</span>
+          <span className="text-sm font-medium">Initializing Cursive...</span>
         </div>
       </div>
     );
@@ -689,6 +792,8 @@ export default function CodePadApp() {
             onDeleteFile={handleDeleteFile}
             onCloseSidebar={() => setIsSidebarOpen(false)}
             onOpenTemplates={() => setIsTemplatesModalOpen(true)}
+            examples={EXAMPLE_PROGRAMS}
+            onSelectExample={handleSelectExample}
           />
         </div>
 
@@ -696,11 +801,12 @@ export default function CodePadApp() {
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-950">
           {/* Tabs Bar */}
           <TabBar
-            files={files}
+            files={[...files, ...exampleTabs]}
             openFileIds={openFileIds}
             activeFileId={activeFileId}
             onSelectTab={handleSelectFile}
             onCloseTab={handleCloseTab}
+            onRequestCloseDirty={handleRequestCloseDirty}
             onNewFile={() => handleCreateFile("untitled.py", false)}
             accentColor={appAccent}
           />
@@ -795,7 +901,54 @@ export default function CodePadApp() {
         isOpen={isTemplatesModalOpen}
         onClose={() => setIsTemplatesModalOpen(false)}
         onSelectTemplate={handleSelectTemplate}
+        onSelectSnippet={handleCreateFromTemplate}
+        snippets={NEW_FILE_TEMPLATES}
       />
+
+      {/* Unsaved-changes sheet shown when closing a dirty tab */}
+      {pendingCloseFile && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 animate-fadeIn"
+          onClick={() => setPendingCloseFile(null)}
+        >
+          <div
+            className="w-full max-w-md m-3 rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-slate-800">
+              <p className="text-sm font-semibold text-slate-100 truncate">
+                Save changes to “{pendingCloseFile.name}”?
+              </p>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                This file has unsaved changes.
+              </p>
+            </div>
+            <div className="p-3 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={handleSaveAndClose}
+                className="w-full py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-colors"
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={handleDiscardAndClose}
+                className="w-full py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors"
+              >
+                Don&apos;t save
+              </button>
+              <button
+                type="button"
+                onClick={() => setPendingCloseFile(null)}
+                className="w-full py-2 rounded-xl text-slate-400 hover:text-slate-200 text-sm transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

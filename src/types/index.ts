@@ -10,6 +10,8 @@ export interface FileItem {
   parentId?: string | null;
   isOpen?: boolean;
   isDirty?: boolean;
+  /** Read-only files (e.g. bundled Examples) open in the editor but cannot be edited or saved. */
+  readOnly?: boolean;
   createdAt: string;
   updatedAt: string;
 }

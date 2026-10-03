@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
             model: "claude-3-5-sonnet-20241022",
             max_tokens: 1024,
             system:
-              "You are an expert programming assistant in CodePad code editor. Provide clean, precise, and immediately useful code completions or answers. When asked for code, return ONLY the code or concise explanation.",
+              "You are an expert programming assistant in Cursive code editor. Provide clean, precise, and immediately useful code completions or answers. When asked for code, return ONLY the code or concise explanation.",
             messages: [
               {
                 role: "user",
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
                 {
                   role: "system",
                   content:
-                    "You are a helpful coding assistant in CodePad editor. Provide concise, clean, working code snippets or explanations.",
+                    "You are a helpful coding assistant in Cursive editor. Provide concise, clean, working code snippets or explanations.",
                 },
                 {
                   role: "user",
@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Built-in intelligent CodePad Assistant (works without requiring API keys)
+    // Built-in intelligent Cursive Assistant (works without requiring API keys)
     const fallbackResult = generateSmartCodeAssistance(
       action,
       language || "python",
