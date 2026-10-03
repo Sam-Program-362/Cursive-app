@@ -1,7 +1,14 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { ExecutionResult, FileItem } from "@/types";
+import {
+  StreamEmulator,
+  useTerminal,
+  cellToReactNode,
+  type Cell,
+  type Token,
+} from "@/lib/runtime/output-emulator";
 import { RUNNABLE_LANGUAGES, COMING_SOON_LANGUAGES } from "@/lib/languages";
 import {
   loadConsolePrefs,
@@ -78,6 +85,27 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
   const [copied, setCopied] = useState(false);
   const [liveInputValue, setLiveInputValue] = useState("");
 
+  // --- Terminal emulation state -------------------------------------------
+  // The emulator maintains a 2D line buffer with a cursor and processes
+  // ANSI sequences (\r, \b, clear-line, cursor-up/down, SGR colors).
+  // useTerminal() provides the rendered content, and we only update the
+  // changed lines on each push.
+  const terminal = useTerminal(
+    "text-slate-200",
+    5000
+  );
+
+  // Process stdout chunks as they arrive; re-render only changed lines.
+  const pushOutput = useCallback(
+    (chunk: string) => {
+      terminal.push(chunk);
+    },
+    [terminal]
+  );
+
+  // Reset the terminal when a new run starts (result changes).
+  const lastResultId = result?.stdout?.length ?? 0;
+
   // --- Panel layout state -------------------------------------------------
   const [panelWidth, setPanelWidth] = useState(() => loadConsolePrefs().width);
   const [isMaximized, setIsMaximized] = useState(false);
@@ -146,8 +174,23 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
   if (!shouldRender) return null;
 
   const handleCopy = () => {
-    if (!result?.output) return;
-    navigator.clipboard.writeText(result.output);
+    // Copy the rendered terminal content (stripping ANSI codes for the
+    // clipboard). The emulator does not store the plain-text version, so we
+    // reconstruct it from the cell buffer by joining each line.
+    const plainLines: string[] = [];
+    for (const line of terminal.lines) {
+      let lineText = "";
+      for (const cell of line) {
+        if (cell.kind === "color") {
+          lineText += cell.value;
+        } else {
+          lineText += cell.value;
+        }
+      }
+      plainLines.push(lineText);
+    }
+    const plainText = plainLines.join("\n");
+    navigator.clipboard.writeText(plainText);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -263,6 +306,15 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
       Math.floor(window.innerWidth * MAX_WIDTH_FRACTION)
     )
   );
+
+  // When a new run starts (result changes), push the complete stdout to the
+  // emulator. The emulator's push() handles \.r, \b, ANSI, etc. and returns
+  // the changed-line range, so the UI only re-renders what changed.
+  useEffect(() => {
+    if (result?.stdout) {
+      terminal.push(result.stdout);
+    }
+  }, [result?.stdout, terminal]);
 
   /* ------------------------------------------------------------------ */
   /* Shared panel body — identical content in both layouts               */
@@ -425,9 +477,7 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
                 </div>
               )}
 
-              {result?.stdout && (
-                <div className="text-slate-200">{result.stdout}</div>
-              )}
+              {terminal.render}
 
               {result?.stderr && (
                 <div className="text-red-400 bg-red-950/30 p-2 rounded border border-red-900/40">
