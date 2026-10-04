@@ -12,6 +12,7 @@
     "lint": "next lint",
     "test:emulator": "bun scripts/test-output-emulator.mjs",
     "test:console": "bun scripts/test-console-panel.mjs",
+    "test:touch": "bun scripts/test-touch-keyboard.mjs",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {

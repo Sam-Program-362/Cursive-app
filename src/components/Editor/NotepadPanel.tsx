@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { FileItem } from "@/types";
+import { useTouchDragVsTap, setKeyboardSuppressed } from "@/lib/touch-keyboard";
 import {
   StickyNote,
   X,
@@ -28,6 +29,8 @@ export const NotepadPanel: React.FC<NotepadPanelProps> = ({
 }) => {
   const [notes, setNotes] = useState("");
   const [previewMode, setPreviewMode] = useState(false);
+  // The notes box follows the editor's touch rule: drag scrolls, tap types.
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     if (file) {
@@ -36,6 +39,18 @@ export const NotepadPanel: React.FC<NotepadPanelProps> = ({
       setNotes("");
     }
   }, [file?.id, file?.notes]);
+
+  // Suppress the keyboard by default so scrolling the notes never raises it;
+  // a confirmed tap re-enables it.
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    setKeyboardSuppressed(textarea, true);
+  }, [isOpen, file?.id, previewMode]);
+
+  useTouchDragVsTap(textareaRef, textareaRef, {
+    enabled: isOpen && Boolean(file) && !previewMode,
+  });
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
@@ -120,6 +135,7 @@ export const NotepadPanel: React.FC<NotepadPanelProps> = ({
             </div>
           ) : (
             <textarea
+              ref={textareaRef}
               value={notes}
               onChange={handleChange}
               placeholder={`Scratchpad notes for ${file.name}...\n\nIdeas, todos, reminders, or scratch code.\nSaved automatically and won't affect execution!`}

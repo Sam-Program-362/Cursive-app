@@ -5,6 +5,11 @@ import Editor, { OnMount, BeforeMount, loader } from "@monaco-editor/react";
 import { EditorSettings, FileItem } from "@/types";
 import { registerMonacoThemes, registerCustomMonacoTheme, THEMES } from "@/lib/themes";
 import { registerLanguageProviders } from "@/lib/monaco-snippets";
+import {
+  useTouchDragVsTap,
+  setKeyboardSuppressed,
+  configureCodeInput,
+} from "@/lib/touch-keyboard";
 import { Loader2 } from "lucide-react";
 
 // Serve Monaco from files bundled with the app (copied into
@@ -37,6 +42,10 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   const monacoRef = useRef<any>(null);
   const editorRef = useRef<any>(null);
   const filesRef = useRef<FileItem[]>(files);
+  // Touch handling (drag scrolls, tap types). `containerRef` is the editor
+  // surface; `textareaRef` is Monaco's hidden input that owns the keyboard.
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     filesRef.current = files;
@@ -66,11 +75,39 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     }
   };
 
+  // Monaco writes its hidden `<textarea class="inputarea">` into the DOM on
+  // mount. Keep it at `inputmode="none"` so focus alone never raises the
+  // soft keyboard; a confirmed tap flips it to "text" (see useTouchDragVsTap).
+  const applyTouchKeyboardDefaults = () => {
+    const textarea = containerRef.current?.querySelector<HTMLTextAreaElement>(
+      "textarea.inputarea"
+    );
+    if (!textarea) return;
+    textareaRef.current = textarea;
+    configureCodeInput(textarea);
+    setKeyboardSuppressed(textarea, true);
+  };
+
+  useTouchDragVsTap(containerRef, textareaRef, {
+    // Only attach once the editor surface exists (the wrapper div is not
+    // rendered until a file is selected).
+    enabled: Boolean(file),
+    onTap: (x, y) => {
+      // Put the caret where the finger tapped. Monaco's own tap gesture does
+      // this too; doing it here keeps the behaviour right if that ever changes.
+      const editor = editorRef.current;
+      if (!editor) return;
+      const target = editor.getTargetAtClientPoint(x, y);
+      if (target?.position) editor.setPosition(target.position);
+    },
+  });
+
   const handleEditorDidMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
     if (editorRefOut) {
       editorRefOut.current = editor;
     }
+    applyTouchKeyboardDefaults();
 
     // Register Keyboard Shortcuts
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
@@ -107,6 +144,26 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     };
   }, [isClient]);
 
+  // Monaco mounts asynchronously; make sure the hidden textarea eventually
+  // carries the keyboard defaults even when it is created after this render.
+  useEffect(() => {
+    if (!isClient || !file) return;
+    let cancelled = false;
+    let attempts = 0;
+    const tryApply = () => {
+      if (cancelled) return;
+      applyTouchKeyboardDefaults();
+      if (containerRef.current?.querySelector("textarea.inputarea")) return;
+      attempts += 1;
+      if (attempts < 20) setTimeout(tryApply, 150);
+    };
+    tryApply();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isClient, file?.id]);
+
   useEffect(() => {
     if (monacoRef.current && settings.theme === "custom") {
       registerCustomMonacoTheme(monacoRef.current, settings.customTheme);
@@ -134,7 +191,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   }
 
   return (
-    <div className="relative h-full w-full overflow-hidden">
+    <div ref={containerRef} className="relative h-full w-full overflow-hidden">
       <Editor
         height="100%"
         width="100%"
