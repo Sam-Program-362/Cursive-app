@@ -7,6 +7,7 @@ import { registerMonacoThemes, registerCustomMonacoTheme, THEMES } from "@/lib/t
 import { registerLanguageProviders } from "@/lib/monaco-snippets";
 import {
   useTouchDragVsTap,
+  useKeyboardVisible,
   setKeyboardSuppressed,
   configureCodeInput,
 } from "@/lib/touch-keyboard";
@@ -121,28 +122,19 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     editor.focus();
   };
 
-  // Keyboard-aware cursor reveal: when the on-screen keyboard opens/closes
-  // (visualViewport resize), keep the caret line visible above the keyboard
-  // instead of leaving it hidden behind it.
+  // Keyboard-aware cursor reveal: when the on-screen keyboard opens, keep the
+  // caret line visible above it instead of hiding it behind the keyboard. We
+  // react to the keyboard's own show/hide signal rather than every visual
+  // viewport event, so scrolling by hand is never fought with.
+  const keyboardVisible = useKeyboardVisible();
   useEffect(() => {
-    const visualViewport = typeof window !== "undefined" ? window.visualViewport : null;
-    if (!visualViewport) return;
-
-    const revealCursor = () => {
-      const editor = editorRef.current;
-      if (!editor) return;
-      const position = editor.getPosition();
-      if (!position) return;
-      editor.revealLineInCenterIfOutsideViewport(position.lineNumber, 0);
-    };
-
-    visualViewport.addEventListener("resize", revealCursor);
-    visualViewport.addEventListener("scroll", revealCursor);
-    return () => {
-      visualViewport.removeEventListener("resize", revealCursor);
-      visualViewport.removeEventListener("scroll", revealCursor);
-    };
-  }, [isClient]);
+    if (!keyboardVisible) return;
+    const editor = editorRef.current;
+    if (!editor) return;
+    const position = editor.getPosition();
+    if (!position) return;
+    editor.revealLineInCenterIfOutsideViewport(position.lineNumber, 0);
+  }, [keyboardVisible]);
 
   // Monaco mounts asynchronously; make sure the hidden textarea eventually
   // carries the keyboard defaults even when it is created after this render.
@@ -229,7 +221,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           smoothScrolling: true,
           renderWhitespace: settings.showInvisibles ? "all" : "selection",
           automaticLayout: true,
-          padding: { top: 8, bottom: 320 },
+          padding: { top: 8, bottom: 120 },
           fontLigatures: true,
           bracketPairColorization: { enabled: true },
           guides: {

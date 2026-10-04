@@ -20,6 +20,7 @@
   "dependencies": {
     "@capacitor/android": "^6.2.2",
     "@capacitor/core": "^6.2.2",
+    "@capacitor/keyboard": "^6.0.4",
     "@monaco-editor/react": "^4.6.0",
     "@neondatabase/serverless": "^0.9.5",
     "canvas-confetti": "^1.9.3",

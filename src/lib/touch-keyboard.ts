@@ -1,22 +1,31 @@
 "use client";
 
 /**
- * Touch behaviour for the editor: drag scrolls, tap types.
+ * Touch behaviour for the editor: a drag only scrolls, a tap types.
  *
- * On Android the soft keyboard appears whenever an editable element receives
- * focus. Monaco opens the keyboard by focusing its hidden `textarea.inputarea`
- * on a tap (see `pointerHandler.js` -> `focusTextArea()`), while a drag scrolls
- * the view without touching focus. The problem is that a touch can still end up
- * focusing the editor, which pops the keyboard while you only wanted to scroll.
+ * The first attempt failed because Monaco's hidden `textarea.inputarea` kept
+ * focus after a tap, so Android re-opened the soft keyboard on *any* later touch.
+ * The rule now is:
  *
- * The fix is the standard mobile-web technique: keep the editable element at
- * `inputmode="none"` so focus never summons the keyboard, and only switch to
- * `inputmode="text"` + focus once our own gesture check confirms a *tap*
- * (movement under ~10px, duration under ~300ms). A drag re-suppresses the
- * keyboard, so scrolling after hiding it (back button) never re-opens it.
+ *  - While the keyboard is hidden the textarea sits at `inputmode="none"` and is
+ *    blurred, so Android has nothing to re-show when you drag.
+ *  - Every touch is classified from a capture-phase listener using movement and
+ *    duration. Focus-causing events caused by a *drag* (Monaco's own tap gesture,
+ *    and the synthetic mousedown/click the browser fires after touchend) are
+ *    stopped, so a drag never focuses the editor or moves the cursor.
+ *  - A confirmed tap flips the textarea to `inputmode="text"`, focuses it and
+ *    asks the keyboard to show.
+ *  - When the keyboard is hidden (back key / hide key) we listen for the event
+ *    and blur the input so the editor is not stuck focused.
+ *  - If the keyboard is already open, a drag leaves it exactly as it is.
+ *
+ * The Capacitor Keyboard plugin provides the show/hide events; visualViewport /
+ * window resize is used as a fallback (and on the web).
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Capacitor } from "@capacitor/core";
+import { Keyboard } from "@capacitor/keyboard";
 
 export interface TouchSample {
   x: number;
@@ -27,15 +36,11 @@ export interface TouchSample {
 export type TouchKind = "tap" | "drag";
 
 /** A touch that moves no more than this many pixels is still a tap. */
-export const TAP_MAX_DISTANCE_PX = 10;
+export const TAP_MAX_DISTANCE_PX = 8;
 /** A touch that lasts no longer than this many ms is still a tap. */
 export const TAP_MAX_DURATION_MS = 300;
 
-/**
- * Pure decision rule: a touch is a tap when it barely moved and was brief,
- * otherwise it is a drag (scroll). Kept separate from the DOM so it can be
- * unit-tested without a browser.
- */
+/** Pure decision rule, kept DOM-free so it can be unit-tested. */
 export function classifyTouch(
   start: TouchSample,
   end: TouchSample,
@@ -49,14 +54,62 @@ export function classifyTouch(
   return moved <= thresholdPx && elapsed <= maxTapMs ? "tap" : "drag";
 }
 
-/** Distance between two touch samples, in CSS pixels. */
 export function touchDistance(start: TouchSample, end: TouchSample): number {
   const dx = end.x - start.x;
   const dy = end.y - start.y;
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-/** True when the current device can fire touch events. */
+/* ------------------------------------------------------------------ */
+/* The decision rules (pure, so the behaviour is unit-testable)        */
+/* ------------------------------------------------------------------ */
+
+/** Only a confirmed tap may focus the editor and raise the keyboard. */
+export function shouldRaiseKeyboard(input: {
+  classified: TouchKind;
+  skipKeyboard: boolean;
+}): boolean {
+  return input.classified === "tap" && !input.skipKeyboard;
+}
+
+/**
+ * Force the editor to give up focus. A drag while the keyboard is already
+ * down must blur it (so Android has nothing to re-show); a drag while the
+ * keyboard is open must leave it alone.
+ */
+export function shouldBlurAfterTouch(input: {
+  classified: TouchKind;
+  skipKeyboard: boolean;
+  keyboardVisible: boolean;
+}): boolean {
+  return (
+    input.classified === "drag" && !input.skipKeyboard && !input.keyboardVisible
+  );
+}
+
+/** Monaco's own tap gesture focuses and moves the caret — a drag must stop it. */
+export function shouldBlockMonacoTapGesture(
+  classified: TouchKind | "pending",
+  skipKeyboard = false
+): boolean {
+  // Touches on Monaco's own UI (scroll bar, minimap, suggestion list) are left
+  // to Monaco — blocking them would break scrolling by bar or picking a
+  // suggestion.
+  return classified === "drag" && !skipKeyboard;
+}
+
+/**
+ * The browser fires mousedown/click after touchend; they would focus the
+ * editor for a gesture that was only a scroll.
+ */
+export function shouldBlockSyntheticMouse(
+  lastTouchEndAt: number,
+  now: number,
+  holdMs = 700
+): boolean {
+  return now - lastTouchEndAt < holdMs;
+}
+
 export function isTouchDevice(): boolean {
   if (typeof window === "undefined" || typeof navigator === "undefined") {
     return false;
@@ -64,10 +117,94 @@ export function isTouchDevice(): boolean {
   return navigator.maxTouchPoints > 0 || "ontouchstart" in window;
 }
 
+function isNativePlatform(): boolean {
+  try {
+    return Capacitor.isNativePlatform();
+  } catch {
+    return false;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Keyboard visibility                                                  */
+/* ------------------------------------------------------------------ */
+
+let keyboardVisible = false;
+const keyboardListeners = new Set<(visible: boolean) => void>();
+let trackingStarted = false;
+
+function setKeyboardVisible(visible: boolean) {
+  if (keyboardVisible === visible) return;
+  keyboardVisible = visible;
+  keyboardListeners.forEach((listener) => listener(visible));
+}
+
+export function getKeyboardVisible(): boolean {
+  return keyboardVisible;
+}
+
+export function subscribeKeyboardVisible(
+  listener: (visible: boolean) => void
+): () => void {
+  keyboardListeners.add(listener);
+  return () => keyboardListeners.delete(listener);
+}
+
 /**
- * Toggle the soft keyboard for an editable element. `inputmode="none"` tells
- * Android not to show a keyboard for this field even while it is focused.
+ * Start listening for the keyboard showing/hiding. The Capacitor Keyboard
+ * plugin is the source of truth on device; visualViewport + window resize is
+ * the fallback (and what runs on the web).
  */
+function ensureKeyboardTracking() {
+  if (trackingStarted || typeof window === "undefined") return;
+  trackingStarted = true;
+
+  if (isNativePlatform()) {
+    // On Android the will/did pairs fire almost together; both are wired so
+    // visibility is correct regardless of which arrives first.
+    const safe = (promise: Promise<unknown>) => promise.catch(() => undefined);
+    safe(Keyboard.addListener("keyboardWillShow", () => setKeyboardVisible(true)));
+    safe(Keyboard.addListener("keyboardDidShow", () => setKeyboardVisible(true)));
+    // Only the confirmed "did hide" flips it off: transient will-hide flashes
+    // (keyboard layout changes) must not blur the editor while typing.
+    safe(Keyboard.addListener("keyboardDidHide", () => setKeyboardVisible(false)));
+  }
+
+  // Fallback: the layout viewport shrinks while the keyboard is up. Track the
+  // tallest size seen as "keyboard closed" and reset it on orientation change.
+  let baselineHeight = window.innerHeight;
+  let baselineWidth = window.innerWidth;
+  const measure = () => {
+    const height = window.innerHeight;
+    const width = window.innerWidth;
+    if (Math.abs(width - baselineWidth) > 100) {
+      // Orientation changed — recalibrate instead of guessing a keyboard.
+      baselineWidth = width;
+      baselineHeight = height;
+      return;
+    }
+    if (height > baselineHeight) baselineHeight = height;
+    setKeyboardVisible(height < baselineHeight - 120);
+  };
+  window.addEventListener("resize", measure);
+  window.visualViewport?.addEventListener("resize", measure);
+}
+
+/** `true` while the soft keyboard is up. */
+export function useKeyboardVisible(): boolean {
+  const [visible, setVisible] = useState(keyboardVisible);
+  useEffect(() => {
+    ensureKeyboardTracking();
+    return subscribeKeyboardVisible(setVisible);
+  }, []);
+  return visible;
+}
+
+/* ------------------------------------------------------------------ */
+/* Editable-element helpers                                             */
+/* ------------------------------------------------------------------ */
+
+/** Suppress (inputmode="none") or allow (inputmode="text") the soft keyboard. */
 export function setKeyboardSuppressed(
   el: HTMLElement | null,
   suppressed: boolean
@@ -86,48 +223,84 @@ export function configureCodeInput(el: HTMLElement | null): void {
   el.setAttribute("data-gramm", "false");
 }
 
-/**
- * Focus an editable element so the keyboard appears. If it is already focused
- * the `inputmode` change alone does not always re-open the keyboard on Android,
- * so we blur and re-focus inside the same user gesture.
- */
-export function openKeyboard(el: HTMLElement | null): void {
-  if (!el) return;
-  setKeyboardSuppressed(el, false);
-  if (targetOwnerDocument(el).activeElement === el) {
-    el.blur();
-  }
-  el.focus();
-}
-
-/** Hide the keyboard without dropping the editor's model selection. */
+/** Hide the keyboard and take focus away so Android has nothing to re-show. */
 export function closeKeyboard(el: HTMLElement | null): void {
   if (!el) return;
   setKeyboardSuppressed(el, true);
-  if (targetOwnerDocument(el).activeElement === el) {
+  if (el.ownerDocument.activeElement === el) el.blur();
+}
+
+/** Make an editable element focusable again and show the keyboard for it. */
+export function openKeyboard(el: HTMLElement | null): void {
+  if (!el) return;
+  setKeyboardSuppressed(el, false);
+  const doc = el.ownerDocument;
+  if (doc.activeElement === el) {
+    // Changing inputmode on an already-focused element does not reliably
+    // re-open the keyboard, so bounce focus inside the same user gesture.
     el.blur();
+  }
+  el.focus();
+  if (isNativePlatform()) {
+    Keyboard.show().catch(() => {
+      /* best effort — focus alone normally suffices */
+    });
   }
 }
 
-function targetOwnerDocument(el: HTMLElement): Document {
-  return el.ownerDocument || document;
+/* ------------------------------------------------------------------ */
+/* Monaco-specific guards                                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Tap targets Monaco handles itself (scroll bar, minimap, suggestion list,
+ * widgets). We must not steal those: scrolling by the side bar stays
+ * keyboard-free and picking a suggestion still works.
+ */
+const MONACO_SELF_MANAGED = [
+  ".scrollbar",
+  ".minimap",
+  ".suggest-widget",
+  ".monaco-list",
+  ".parameter-hints-widget",
+  ".find-widget",
+  ".context-view",
+  ".margin-view-overlays",
+];
+
+export function isSelfManagedTouch(node: EventTarget | null): boolean {
+  if (!node || typeof (node as Element).closest !== "function") return false;
+  const el = node as Element;
+  return MONACO_SELF_MANAGED.some((selector) => Boolean(el.closest(selector)));
 }
 
+/** Monaco's own tap gesture (a CustomEvent that does not bubble). */
+export const MONACO_TAP_EVENT = "-monaco-gesturetap";
+
+/* ------------------------------------------------------------------ */
+/* The hook                                                             */
+/* ------------------------------------------------------------------ */
+
 export interface TouchDragVsTapOptions {
-  /** Horizontal/vertical movement (px) above which a touch is a drag. */
   thresholdPx?: number;
-  /** Longest touch (ms) that can still count as a tap. */
   maxTapMs?: number;
-  /** Called on a confirmed tap, before the keyboard opens. */
+  /** Called for a confirmed tap that lands on the editable surface. */
   onTap?: (x: number, y: number) => void;
-  /** Master switch. */
   enabled?: boolean;
 }
 
+interface TouchState {
+  x: number;
+  y: number;
+  t: number;
+  classified: "pending" | TouchKind;
+  skipKeyboard: boolean;
+}
+
 /**
- * Attach drag-vs-tap handling to `containerRef`; the keyboard is toggled on the
- * editable element in `targetRef` (which may be the container itself for a
- * plain textarea, or a hidden textarea inside Monaco).
+ * Attach drag-vs-tap handling to `containerRef`, toggling the keyboard on the
+ * editable element in `targetRef` (Monaco's hidden textarea, or a plain
+ * textarea when both refs are the same element).
  */
 export function useTouchDragVsTap(
   containerRef: React.RefObject<HTMLElement | null>,
@@ -139,6 +312,7 @@ export function useTouchDragVsTap(
     maxTapMs = TAP_MAX_DURATION_MS,
     enabled = true,
   } = options;
+
   const optionsRef = useRef(options);
   optionsRef.current = options;
 
@@ -146,70 +320,181 @@ export function useTouchDragVsTap(
     const container = containerRef.current;
     if (!container || !enabled || !isTouchDevice()) return;
 
-    let start: TouchSample = { x: 0, y: 0, t: 0 };
-    let dragged = false;
-    let tracking = false;
+    ensureKeyboardTracking();
 
-    const suppressKeyboard = () => {
-      const target = targetRef.current;
-      if (!target) return;
-      setKeyboardSuppressed(target, true);
-      if (target.ownerDocument.activeElement === target) target.blur();
+    const state: TouchState = {
+      x: 0,
+      y: 0,
+      t: 0,
+      classified: "pending",
+      skipKeyboard: false,
     };
+    let lastTouchEndAt = -Infinity;
 
     const onTouchStart = (event: TouchEvent) => {
       if (event.touches.length !== 1) {
-        tracking = false;
+        state.classified = "drag";
         return;
       }
       const touch = event.touches[0];
-      start = { x: touch.clientX, y: touch.clientY, t: Date.now() };
-      dragged = false;
-      tracking = true;
+      state.x = touch.clientX;
+      state.y = touch.clientY;
+      state.t = Date.now();
+      state.classified = "pending";
+      state.skipKeyboard = isSelfManagedTouch(event.target);
+      // While the keyboard is down, keep the input non-focusable so a plain
+      // touch can never re-show it. Focus/selection are untouched here so
+      // long-press selection still works.
+      if (!state.skipKeyboard && !getKeyboardVisible()) {
+        setKeyboardSuppressed(targetRef.current, true);
+      }
     };
 
     const onTouchMove = (event: TouchEvent) => {
-      if (!tracking) return;
+      if (state.classified !== "pending") return;
       const touch = event.touches[0];
       if (!touch) return;
-      const current = { x: touch.clientX, y: touch.clientY, t: Date.now() };
-      if (touchDistance(start, current) > thresholdPx) {
-        dragged = true;
-        // Scrolling must never keep or raise the keyboard.
-        suppressKeyboard();
+      const distance = touchDistance(state, {
+        x: touch.clientX,
+        y: touch.clientY,
+        t: Date.now(),
+      });
+      if (distance > thresholdPx) {
+        state.classified = "drag";
+        if (
+          shouldBlurAfterTouch({
+            classified: "drag",
+            skipKeyboard: state.skipKeyboard,
+            keyboardVisible: getKeyboardVisible(),
+          })
+        ) {
+          // Scrolling must not focus or raise the keyboard.
+          closeKeyboard(targetRef.current);
+        }
       }
     };
 
     const onTouchEnd = (event: TouchEvent) => {
-      if (!tracking) return;
-      tracking = false;
       const touch = event.changedTouches[0];
       const end: TouchSample = {
-        x: touch ? touch.clientX : start.x,
-        y: touch ? touch.clientY : start.y,
+        x: touch ? touch.clientX : state.x,
+        y: touch ? touch.clientY : state.y,
         t: Date.now(),
       };
-      const moved = touchDistance(start, end);
-      const isTap =
-        !dragged && classifyTouch(start, end, thresholdPx, maxTapMs) === "tap";
-      if (isTap) {
-        optionsRef.current.onTap?.(end.x, end.y);
-        openKeyboard(targetRef.current);
-      } else if (moved > thresholdPx) {
-        // A drag that ended before a touchmove was seen.
-        suppressKeyboard();
+
+      if (state.classified === "pending") {
+        state.classified = classifyTouch(state, end, thresholdPx, maxTapMs);
+      }
+
+      // Let Monaco's own tap handling run when the touch landed on its UI
+      // (suggestion list, line-number gutter, scroll bar) — that interaction
+      // needs the browser's synthetic events. Otherwise they would refocus the
+      // editor after a gesture that was only a scroll, so we stop them.
+      const selfManagedTap = state.skipKeyboard && state.classified === "tap";
+      lastTouchEndAt = selfManagedTap ? -Infinity : Date.now();
+
+      if (state.classified === "drag") {
+        if (
+          shouldBlurAfterTouch({
+            classified: "drag",
+            skipKeyboard: state.skipKeyboard,
+            keyboardVisible: getKeyboardVisible(),
+          })
+        ) {
+          closeKeyboard(targetRef.current);
+        }
+        return;
+      }
+
+      // Confirmed tap.
+      if (
+        !shouldRaiseKeyboard({
+          classified: state.classified,
+          skipKeyboard: state.skipKeyboard,
+        })
+      ) {
+        return;
+      }
+      optionsRef.current.onTap?.(end.x, end.y);
+      openKeyboard(targetRef.current);
+    };
+
+    /* --- Focus-causing events: stop the ones a drag produces --------------- */
+
+    const blockTapGesture = (event: Event) => {
+      // Monaco's own tap gesture focuses the textarea and moves the caret.
+      // A drag must do neither; a tap is fine because we already arranged the
+      // focus ourselves just above.
+      if (shouldBlockMonacoTapGesture(state.classified, state.skipKeyboard)) {
+        event.preventDefault();
+        event.stopPropagation();
       }
     };
 
-    container.addEventListener("touchstart", onTouchStart, { passive: true });
-    container.addEventListener("touchmove", onTouchMove, { passive: true });
-    container.addEventListener("touchend", onTouchEnd, { passive: true });
-    container.addEventListener("touchcancel", onTouchEnd, { passive: true });
+    const blockSyntheticMouse = (event: Event) => {
+      if (shouldBlockSyntheticMouse(lastTouchEndAt, Date.now())) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    const blockSyntheticPointer = (event: Event) => {
+      const pointerEvent = event as PointerEvent;
+      if (
+        (pointerEvent as any).pointerType === "mouse" &&
+        shouldBlockSyntheticMouse(lastTouchEndAt, Date.now())
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    const capture = { capture: true } as AddEventListenerOptions;
+    const captureBlocking = { capture: true, passive: false } as AddEventListenerOptions;
+
+    container.addEventListener("touchstart", onTouchStart, {
+      capture: true,
+      passive: true,
+    });
+    container.addEventListener("touchmove", onTouchMove, {
+      capture: true,
+      passive: true,
+    });
+    container.addEventListener("touchend", onTouchEnd, {
+      capture: true,
+      passive: true,
+    });
+    container.addEventListener("touchcancel", onTouchEnd, {
+      capture: true,
+      passive: true,
+    });
+
+    container.addEventListener(MONACO_TAP_EVENT, blockTapGesture, captureBlocking);
+    container.addEventListener("mousedown", blockSyntheticMouse, captureBlocking);
+    container.addEventListener("click", blockSyntheticMouse, captureBlocking);
+    container.addEventListener("auxclick", blockSyntheticMouse, captureBlocking);
+    container.addEventListener("pointerdown", blockSyntheticPointer, captureBlocking);
+
     return () => {
-      container.removeEventListener("touchstart", onTouchStart);
-      container.removeEventListener("touchmove", onTouchMove);
-      container.removeEventListener("touchend", onTouchEnd);
-      container.removeEventListener("touchcancel", onTouchEnd);
+      container.removeEventListener("touchstart", onTouchStart, capture);
+      container.removeEventListener("touchmove", onTouchMove, capture);
+      container.removeEventListener("touchend", onTouchEnd, capture);
+      container.removeEventListener("touchcancel", onTouchEnd, capture);
+      container.removeEventListener(MONACO_TAP_EVENT, blockTapGesture, capture);
+      container.removeEventListener("mousedown", blockSyntheticMouse, capture);
+      container.removeEventListener("click", blockSyntheticMouse, capture);
+      container.removeEventListener("auxclick", blockSyntheticMouse, capture);
+      container.removeEventListener("pointerdown", blockSyntheticPointer, capture);
     };
   }, [containerRef, targetRef, enabled, thresholdPx, maxTapMs]);
+
+  // When the keyboard goes away the editor must lose focus too, otherwise it
+  // stays "stuck" and Android re-shows the keyboard on the next touch.
+  useEffect(() => {
+    if (!enabled) return;
+    ensureKeyboardTracking();
+    return subscribeKeyboardVisible((visible) => {
+      if (!visible) closeKeyboard(targetRef.current);
+    });
+  }, [targetRef, enabled]);
 }
