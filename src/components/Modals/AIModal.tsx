@@ -10,6 +10,7 @@ import {
   loadAiSettings,
   type AiSettings,
 } from "@/lib/ai-context";
+import { hitTokenLimit } from "@/lib/ai-connections";
 import { useOnlineStatus } from "@/lib/use-online-status";
 import {
   Sparkles,
@@ -70,6 +71,15 @@ export const AIModal: React.FC<AIModalProps> = ({
   });
   const [includeContext, setIncludeContext] = useState(false);
   const [selection, setSelection] = useState("");
+  /** The last answer stopped at the response-token limit. */
+  const [cutOff, setCutOff] = useState(false);
+  /** Plain-words hint shown when the model returns an empty answer. */
+  const [notice, setNotice] = useState<string | null>(null);
+  /** The last request, so "Continue" can replay it with the partial answer. */
+  const [lastRequest, setLastRequest] = useState<{
+    action: "complete" | "explain" | "fix" | "refactor" | "custom";
+    prompt: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -79,6 +89,9 @@ export const AIModal: React.FC<AIModalProps> = ({
     setIncludeContext(loaded.projectAccess !== "off");
     setError(null);
     setAiResult(null);
+    setCutOff(false);
+    setNotice(null);
+    setLastRequest(null);
     setSelection(getSelection ? getSelection() : "");
     getAiConfig().then((config) => {
       if (!cancelled) setConfigured(config.hasKey);
@@ -104,29 +117,35 @@ export const AIModal: React.FC<AIModalProps> = ({
 
   if (!isOpen) return null;
 
-  const contextEnabled =
-    includeContext && settings.projectAccess !== "off" && contextResult.text.length > 0;
-
   const handleGenerate = async (
     selectedAction = action,
-    customPrompt = prompt
+    customPrompt = prompt,
+    opts: { continueFrom?: string; append?: boolean } = {}
   ) => {
     if (!activeFile) return;
 
     setIsLoading(true);
-    setAiResult(null);
+    if (!opts.append) setAiResult(null);
     setError(null);
+    setNotice(null);
+    setCutOff(false);
+    setLastRequest({ action: selectedAction, prompt: customPrompt });
+
+    const contextEnabledNow =
+      includeContext &&
+      settings.projectAccess !== "off" &&
+      contextResult.text.length > 0;
+    const contextText = contextEnabledNow ? contextResult.text : undefined;
 
     // Offline: use the built-in assistant so the feature still works.
     if (!online) {
-      setAiResult(
-        generateSmartCodeAssistance(
-          selectedAction,
-          activeFile.language,
-          activeFile.content,
-          customPrompt
-        )
+      const offlineResult = generateSmartCodeAssistance(
+        selectedAction,
+        activeFile.language,
+        activeFile.content,
+        customPrompt
       );
+      setAiResult(offlineResult);
       setEngineUsed("Built-in assistant (offline)");
       setIsLoading(false);
       return;
@@ -140,10 +159,26 @@ export const AIModal: React.FC<AIModalProps> = ({
         customPrompt,
         {
           systemPrompt: settings.systemPrompt,
-          contextText: contextEnabled ? contextResult.text : undefined,
+          contextText,
+          continueFrom: opts.continueFrom,
         }
       );
-      setAiResult(response.result);
+      if (response.empty) {
+        const limit =
+          response.maxResponseTokens === "model" ||
+          response.maxResponseTokens === undefined
+            ? "the Model default"
+            : `${response.maxResponseTokens} tokens`;
+        setNotice(
+          `The model sent back an empty answer. Reasoning models often use up the whole limit (${limit}) while thinking, before writing anything. Open Settings → AI, raise “Max response tokens”, and ask again.`
+        );
+      }
+      setAiResult((prev) =>
+        opts.append && prev
+          ? `${prev}\n\n${response.result}`
+          : response.result
+      );
+      setCutOff(!response.empty && hitTokenLimit(response.finishReason));
       setEngineUsed(response.engine);
       if (response.usedFallback) setConfigured(false);
     } catch (err) {
@@ -151,6 +186,15 @@ export const AIModal: React.FC<AIModalProps> = ({
     } finally {
       setIsLoading(false);
     }
+  };
+
+  /** Ask the model to continue a reply that hit the token limit. */
+  const handleContinue = () => {
+    if (!lastRequest || !aiResult) return;
+    void handleGenerate(lastRequest.action, lastRequest.prompt, {
+      continueFrom: aiResult,
+      append: true,
+    });
   };
 
   const handleCopy = () => {
@@ -346,29 +390,56 @@ export const AIModal: React.FC<AIModalProps> = ({
               <Loader2 className="w-6 h-6 animate-spin text-purple-400" />
               <span className="text-xs">Generating smart suggestion...</span>
             </div>
-          ) : aiResult ? (
+          ) : aiResult || notice ? (
             <div className="space-y-2">
               <div className="flex items-center justify-between text-[11px] text-slate-400 pb-2 border-b border-slate-800">
                 <span className="text-purple-400 font-sans font-semibold flex items-center gap-1.5">
                   <Eye className="w-3 h-3" />
                   {engineUsed}
                 </span>
-                <button
-                  type="button"
-                  onClick={handleCopy}
-                  className="flex items-center gap-1 text-slate-400 hover:text-slate-200"
-                >
-                  {copied ? (
-                    <Check className="w-3 h-3 text-emerald-400" />
-                  ) : (
-                    <Copy className="w-3 h-3" />
-                  )}
-                  <span>{copied ? "Copied" : "Copy"}</span>
-                </button>
+                {aiResult && (
+                  <button
+                    type="button"
+                    onClick={handleCopy}
+                    className="flex items-center gap-1 text-slate-400 hover:text-slate-200"
+                  >
+                    {copied ? (
+                      <Check className="w-3 h-3 text-emerald-400" />
+                    ) : (
+                      <Copy className="w-3 h-3" />
+                    )}
+                    <span>{copied ? "Copied" : "Copy"}</span>
+                  </button>
+                )}
               </div>
-              <pre className="whitespace-pre-wrap leading-relaxed text-slate-200 p-2 bg-slate-900/70 rounded-lg border border-slate-800">
-                {aiResult}
-              </pre>
+              {notice && (
+                <div className="p-3 rounded-xl border border-amber-700/60 bg-amber-950/40 text-[11px] leading-relaxed text-amber-200 font-sans">
+                  {notice}
+                </div>
+              )}
+              {aiResult && (
+                <pre className="whitespace-pre-wrap leading-relaxed text-slate-200 p-2 bg-slate-900/70 rounded-lg border border-slate-800">
+                  {aiResult}
+                </pre>
+              )}
+              {cutOff && aiResult && (
+                <div className="p-3 rounded-xl border border-amber-700/60 bg-amber-950/40 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[11px] text-amber-200 font-sans">
+                    The answer stopped at the response-token limit.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleContinue}
+                    disabled={isLoading}
+                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white rounded-xl text-[11px] font-semibold flex items-center gap-1.5 transition-colors"
+                  >
+                    {isLoading ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : null}
+                    Cut off - Continue
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="flex items-center justify-center h-full py-12 text-slate-500 text-xs text-center font-sans">

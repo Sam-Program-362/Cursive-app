@@ -31,7 +31,7 @@ export type ProviderKind =
   | "local"
   | "custom";
 
-export type ApiStyle = "openai" | "anthropic";
+export type ApiStyle = "openai" | "anthropic" | "google";
 
 export interface ProviderPreset {
   id: ProviderKind;
@@ -86,8 +86,9 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: "google",
     label: "Google Gemini",
-    apiStyle: "openai",
-    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    // Gemini's own API, so limits map to generationConfig.maxOutputTokens.
+    apiStyle: "google",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     defaultModel: "gemini-2.5-flash",
     keyPlaceholder: "AIza...",
     docsUrl: "https://aistudio.google.com/app/apikey",
@@ -175,6 +176,60 @@ export interface AiConnection {
   provider: ProviderKind;
   baseUrl: string;
   model: string;
+  /** Optional per-connection overrides of the global token controls. */
+  overrides?: Partial<TokenLimits>;
+}
+
+/**
+ * Token controls. The global values live in Settings > AI (see ai-context.ts);
+ * a connection may override any of them individually.
+ */
+export interface TokenLimits {
+  /** Max response tokens, or "model" to let the provider decide. */
+  maxResponseTokens: number | "model";
+  /** Budget for chat history + attached project context. */
+  maxContextTokens: number;
+  /** Sampling temperature, or null to leave it at the provider default. */
+  temperature: number | null;
+}
+
+export const DEFAULT_TOKEN_LIMITS: TokenLimits = {
+  maxResponseTokens: 4096,
+  maxContextTokens: 16000,
+  temperature: null,
+};
+
+export const MIN_RESPONSE_TOKENS = 256;
+export const MAX_RESPONSE_TOKENS = 16384;
+/** Values offered in the token pickers (all within the supported range). */
+export const RESPONSE_TOKEN_CHOICES = [256, 512, 1024, 2048, 4096, 8192, 16384];
+/** Values offered for the context budget (history + attached project). */
+export const CONTEXT_TOKEN_CHOICES = [4000, 8000, 12000, 16000, 32000, 64000, 128000];
+
+export function clampResponseTokens(value: number): number {
+  return Math.min(MAX_RESPONSE_TOKENS, Math.max(MIN_RESPONSE_TOKENS, Math.round(value)));
+}
+
+/** Per-connection override wins over the global value when it is set. */
+export function resolveTokenLimits(
+  connection: AiConnection | null | undefined,
+  globals: TokenLimits
+): TokenLimits {
+  const overrides = connection?.overrides || {};
+  return {
+    maxResponseTokens:
+      overrides.maxResponseTokens !== undefined
+        ? overrides.maxResponseTokens
+        : globals.maxResponseTokens,
+    maxContextTokens:
+      overrides.maxContextTokens !== undefined
+        ? overrides.maxContextTokens
+        : globals.maxContextTokens,
+    temperature:
+      overrides.temperature !== undefined
+        ? overrides.temperature
+        : globals.temperature,
+  };
 }
 
 const CONNECTIONS_KEY = "cursive_ai_connections";
@@ -260,14 +315,78 @@ export function loadConnections(): AiConnection[] {
         provider: (c.provider as ProviderKind) || "custom",
         baseUrl: typeof c.baseUrl === "string" ? c.baseUrl : "",
         model: typeof c.model === "string" ? c.model : "",
+        ...(c.overrides && typeof c.overrides === "object"
+          ? { overrides: sanitizeOverrides(c.overrides) }
+          : {}),
       }));
   } catch {
     return [];
   }
 }
 
+function sanitizeOverrides(raw: any): Partial<TokenLimits> {
+  const out: Partial<TokenLimits> = {};
+  if (raw.maxResponseTokens === "model") out.maxResponseTokens = "model";
+  else if (typeof raw.maxResponseTokens === "number")
+    out.maxResponseTokens = clampResponseTokens(raw.maxResponseTokens);
+  if (typeof raw.maxContextTokens === "number" && raw.maxContextTokens > 0)
+    out.maxContextTokens = Math.round(raw.maxContextTokens);
+  if (raw.temperature === null) out.temperature = null;
+  else if (typeof raw.temperature === "number")
+    out.temperature = Math.min(2, Math.max(0, raw.temperature));
+  return out;
+}
+
 export function saveConnections(connections: AiConnection[]) {
   writeLocal(CONNECTIONS_KEY, JSON.stringify(connections));
+}
+
+const TOKEN_LIMITS_KEY = "cursive_ai_token_limits";
+
+/** Sanitise a token-limits object, filling anything missing with defaults. */
+export function sanitizeTokenLimits(raw: any): TokenLimits {
+  return {
+    maxResponseTokens:
+      raw?.maxResponseTokens === "model"
+        ? "model"
+        : typeof raw?.maxResponseTokens === "number"
+        ? clampResponseTokens(raw.maxResponseTokens)
+        : DEFAULT_TOKEN_LIMITS.maxResponseTokens,
+    maxContextTokens:
+      typeof raw?.maxContextTokens === "number" && raw.maxContextTokens > 0
+        ? Math.min(200000, Math.round(raw.maxContextTokens))
+        : DEFAULT_TOKEN_LIMITS.maxContextTokens,
+    temperature:
+      raw?.temperature === null
+        ? null
+        : typeof raw?.temperature === "number"
+        ? Math.min(2, Math.max(0, raw.temperature))
+        : DEFAULT_TOKEN_LIMITS.temperature,
+  };
+}
+
+/** Global token controls (Settings > AI). Connections may override these. */
+export function loadTokenLimits(): TokenLimits {
+  const raw = readLocal(TOKEN_LIMITS_KEY);
+  if (!raw) return { ...DEFAULT_TOKEN_LIMITS };
+  try {
+    return sanitizeTokenLimits(JSON.parse(raw));
+  } catch {
+    return { ...DEFAULT_TOKEN_LIMITS };
+  }
+}
+
+/** Merge a patch into the stored globals (undefined fields stay untouched). */
+export function saveTokenLimits(patch: Partial<TokenLimits>): void {
+  const merged = { ...loadTokenLimits() };
+  if (patch.maxResponseTokens !== undefined) {
+    merged.maxResponseTokens = patch.maxResponseTokens;
+  }
+  if (patch.maxContextTokens !== undefined) {
+    merged.maxContextTokens = patch.maxContextTokens;
+  }
+  if (patch.temperature !== undefined) merged.temperature = patch.temperature;
+  writeLocal(TOKEN_LIMITS_KEY, JSON.stringify(sanitizeTokenLimits(merged)));
 }
 
 export function getActiveConnectionId(): string | null {
@@ -426,10 +545,27 @@ function buildHeaders(connection: AiConnection, apiKey: string): Record<string, 
       "anthropic-dangerous-direct-browser-access": "true",
     };
   }
+  if (preset.apiStyle === "google") {
+    // Gemini takes the key in the query string, not an Authorization header.
+    return {};
+  }
   const headers: Record<string, string> = {};
   if (apiKey.trim()) headers.Authorization = `Bearer ${apiKey.trim()}`;
   if (preset.extraHeaders) Object.assign(headers, preset.extraHeaders);
   return headers;
+}
+
+/** Gemini authenticates with `?key=` on every request. */
+function withGoogleKey(url: string, apiKey: string): string {
+  if (!apiKey.trim()) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}key=${encodeURIComponent(
+    apiKey.trim()
+  )}`;
+}
+
+function rawMessage(text: string): string {
+  const parsed = parseJson(text);
+  return String(parsed?.error?.message || parsed?.message || parsed?.detail || "");
 }
 
 /** Turn an HTTP failure into a short, plain-words explanation. */
@@ -497,7 +633,8 @@ function extractModelIds(parsed: any): string[] {
 export async function fetchModels(connection: AiConnection): Promise<string[]> {
   const preset = getPreset(connection.provider);
   const apiKey = (await getSecret(connectionSecretKey(connection.id))) || "";
-  const url = joinUrl(connection.baseUrl, "/models");
+  let url = joinUrl(connection.baseUrl, "/models");
+  if (preset.apiStyle === "google") url = withGoogleKey(url, apiKey);
   let response: HttpResult;
   try {
     response = await httpRequest("GET", url, buildHeaders(connection, apiKey));
@@ -533,6 +670,16 @@ function extractChatText(apiStyle: ApiStyle, parsed: any): string | null {
     }
     return null;
   }
+  if (apiStyle === "google") {
+    const parts = parsed?.candidates?.[0]?.content?.parts;
+    if (Array.isArray(parts)) {
+      const text = parts
+        .map((p: any) => (typeof p?.text === "string" ? p.text : ""))
+        .join("");
+      if (text.trim()) return text.trim();
+    }
+    return null;
+  }
   const content = parsed?.choices?.[0]?.message?.content;
   if (typeof content === "string" && content.trim()) return content.trim();
   if (Array.isArray(content)) {
@@ -542,6 +689,136 @@ function extractChatText(apiStyle: ApiStyle, parsed: any): string | null {
     if (text.trim()) return text.trim();
   }
   return null;
+}
+
+/** The provider's stop reason: finish_reason / stop_reason / finishReason. */
+function extractFinishReason(apiStyle: ApiStyle, parsed: any): string | null {
+  if (apiStyle === "anthropic") {
+    return typeof parsed?.stop_reason === "string" ? parsed.stop_reason : null;
+  }
+  if (apiStyle === "google") {
+    const reason = parsed?.candidates?.[0]?.finishReason;
+    return typeof reason === "string" ? reason : null;
+  }
+  const reason = parsed?.choices?.[0]?.finish_reason;
+  return typeof reason === "string" ? reason : null;
+}
+
+/**
+ * True when the model stopped because it hit the response-token limit:
+ * finish_reason "length" (OpenAI), stop_reason "max_tokens" (Anthropic),
+ * finishReason "MAX_TOKENS" (Gemini).
+ */
+export function hitTokenLimit(
+  finishReason: string | null | undefined
+): boolean {
+  if (!finishReason) return false;
+  const reason = finishReason.toLowerCase();
+  return reason === "length" || reason === "max_tokens";
+}
+
+/**
+ * Detect a clear "wrong parameter name" rejection (HTTP 400/404/422 that
+ * mentions max_tokens) so the caller can retry once with the other name.
+ */
+export function isLimitParamError(
+  status: number,
+  responseText: string
+): boolean {
+  if (status !== 400 && status !== 404 && status !== 422) return false;
+  const parsed = parseJson(responseText);
+  const message = String(
+    parsed?.error?.message || parsed?.message || parsed?.detail || responseText
+  ).toLowerCase();
+  if (!message.includes("max_tokens") && !message.includes("max_completion_tokens")) {
+    return false;
+  }
+  return /unknown|unexpected|unsupported|unrecognized|not supported|does not support|invalid|deprecated|instead|use ['"`]?max_/.test(
+    message
+  );
+}
+
+export type OpenAiLimitParam = "max_tokens" | "max_completion_tokens";
+
+export interface ChatRequestOptions {
+  /** Response cap, or "model" to let the provider decide. */
+  maxResponseTokens: number | "model";
+  /** Temperature, or null to leave the provider default alone. */
+  temperature: number | null;
+  /** OpenAI-compatible parameter name (some models need max_completion_tokens). */
+  limitParam?: OpenAiLimitParam;
+}
+
+/**
+ * Build the URL and JSON body for one chat call, mapped per provider:
+ *
+ *  - OpenAI-compatible: `max_tokens` (or `max_completion_tokens`), `temperature`
+ *  - Anthropic:         `max_tokens` is required — 4096 stands in for "model"
+ *  - Google Gemini:     POST /models/{model}:generateContent with
+ *                       `generationConfig.maxOutputTokens` / `temperature`
+ *
+ * Pure (no I/O) so the mapping can be unit-tested.
+ */
+export function buildChatRequest(
+  apiStyle: ApiStyle,
+  baseUrl: string,
+  rawModel: string,
+  messages: ChatMessage[],
+  options: ChatRequestOptions
+): { url: string; body: Record<string, unknown>; limitParam: OpenAiLimitParam } {
+  const model = rawModel.trim();
+  const limitParam: OpenAiLimitParam = options.limitParam || "max_tokens";
+  const system = messages.find((m) => m.role === "system")?.content;
+  const rest = messages.filter((m) => m.role !== "system");
+
+  if (apiStyle === "google") {
+    const url = joinUrl(
+      baseUrl,
+      `/models/${model.replace(/^models\//, "")}:generateContent`
+    );
+    const body: Record<string, unknown> = {
+      contents: rest.map((m) => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content }],
+      })),
+    };
+    if (system) body.systemInstruction = { parts: [{ text: system }] };
+    const generationConfig: Record<string, unknown> = {};
+    if (options.maxResponseTokens !== "model") {
+      generationConfig.maxOutputTokens = options.maxResponseTokens;
+    }
+    if (options.temperature !== null) {
+      generationConfig.temperature = options.temperature;
+    }
+    if (Object.keys(generationConfig).length > 0) {
+      body.generationConfig = generationConfig;
+    }
+    return { url, body, limitParam };
+  }
+
+  if (apiStyle === "anthropic") {
+    const body: Record<string, unknown> = {
+      model,
+      // Anthropic refuses the request without max_tokens, so "Model default"
+      // is sent as the standard 4096 cap.
+      max_tokens:
+        options.maxResponseTokens === "model" ? 4096 : options.maxResponseTokens,
+      ...(system ? { system } : {}),
+      messages: rest.map((m) => ({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: m.content,
+      })),
+    };
+    if (options.temperature !== null) body.temperature = options.temperature;
+    return { url: joinUrl(baseUrl, "/messages"), body, limitParam };
+  }
+
+  const body: Record<string, unknown> = { model, messages };
+  if (options.maxResponseTokens !== "model") {
+    body[limitParam] = options.maxResponseTokens;
+  }
+  if (options.temperature !== null) body.temperature = options.temperature;
+  return { url: joinUrl(baseUrl, "/chat/completions"), body, limitParam };
 }
 
 /**
@@ -560,27 +837,26 @@ export async function testConnection(connection: AiConnection): Promise<TestResu
     return { ok: false, message: "Add an API key before testing." };
   }
 
+  const request = buildChatRequest(
+    preset.apiStyle,
+    connection.baseUrl,
+    model,
+    [{ role: "user", content: "Reply with the single word: ok" }],
+    { maxResponseTokens: 8, temperature: null }
+  );
   const url =
-    preset.apiStyle === "anthropic"
-      ? joinUrl(connection.baseUrl, "/messages")
-      : joinUrl(connection.baseUrl, "/chat/completions");
-
-  const body =
-    preset.apiStyle === "anthropic"
-      ? {
-          model,
-          max_tokens: 8,
-          messages: [{ role: "user", content: "Reply with the single word: ok" }],
-        }
-      : {
-          model,
-          max_tokens: 8,
-          messages: [{ role: "user", content: "Reply with the single word: ok" }],
-        };
+    preset.apiStyle === "google"
+      ? withGoogleKey(request.url, apiKey)
+      : request.url;
 
   let response: HttpResult;
   try {
-    response = await httpRequest("POST", url, buildHeaders(connection, apiKey), body);
+    response = await httpRequest(
+      "POST",
+      url,
+      buildHeaders(connection, apiKey),
+      request.body
+    );
   } catch (error) {
     return { ok: false, message: networkError(preset.label, error) };
   }
@@ -635,51 +911,89 @@ export function fitMessagesToBudget(
   return result;
 }
 
-/** Send a chat completion through a connection and return the assistant text. */
+export interface ChatResult {
+  /** Assistant text ("" when the provider returned nothing). */
+  text: string;
+  /** Why the model stopped — `hitTokenLimit` interprets it. */
+  finishReason: string | null;
+  /** True when the provider returned no usable text. */
+  empty: boolean;
+}
+
+/**
+ * Send a chat request through a connection.
+ *
+ * `limits` must already be resolved by the caller (global settings plus any
+ * per-connection override — see `resolveTokenLimits`). The conversation is
+ * trimmed oldest-first to `limits.maxContextTokens` before it is sent; the
+ * system message and the newest message always survive.
+ */
 export async function chatWithConnection(
   connection: AiConnection,
   messages: ChatMessage[],
-  maxTokens = 1024
-): Promise<string> {
-  messages = fitMessagesToBudget(messages);
+  limits: TokenLimits = DEFAULT_TOKEN_LIMITS
+): Promise<ChatResult> {
+  const trimmed = fitMessagesToBudget(messages, limits.maxContextTokens);
   const preset = getPreset(connection.provider);
   const apiKey = (await getSecret(connectionSecretKey(connection.id))) || "";
   const model = (connection.model || preset.defaultModel || "").trim();
   if (!model) throw new Error("No model set for this connection.");
 
-  let url: string;
-  let body: unknown;
+  const options: ChatRequestOptions = {
+    maxResponseTokens: limits.maxResponseTokens,
+    temperature: limits.temperature,
+  };
+  let request = buildChatRequest(
+    preset.apiStyle,
+    connection.baseUrl,
+    model,
+    trimmed,
+    options
+  );
 
-  if (preset.apiStyle === "anthropic") {
-    url = joinUrl(connection.baseUrl, "/messages");
-    const system = messages.find((m) => m.role === "system")?.content;
-    const rest = messages.filter((m) => m.role !== "system");
-    body = {
-      model,
-      max_tokens: maxTokens,
-      ...(system ? { system } : {}),
-      messages: rest.map((m) => ({
-        role: m.role === "assistant" ? "assistant" : "user",
-        content: m.content,
-      })),
-    };
-  } else {
-    url = joinUrl(connection.baseUrl, "/chat/completions");
-    body = { model, messages, max_tokens: maxTokens };
-  }
+  const post = async (r: typeof request): Promise<HttpResult> => {
+    const url =
+      preset.apiStyle === "google" ? withGoogleKey(r.url, apiKey) : r.url;
+    try {
+      return await httpRequest(
+        "POST",
+        url,
+        buildHeaders(connection, apiKey),
+        r.body
+      );
+    } catch (error) {
+      throw new Error(networkError(preset.label, error));
+    }
+  };
 
-  let response: HttpResult;
-  try {
-    response = await httpRequest("POST", url, buildHeaders(connection, apiKey), body);
-  } catch (error) {
-    throw new Error(networkError(preset.label, error));
+  let response = await post(request);
+
+  // Some OpenAI-compatible models want max_completion_tokens instead of
+  // max_tokens; retry once with the other name on a clear parameter error.
+  if (
+    response.status >= 300 &&
+    preset.apiStyle === "openai" &&
+    isLimitParamError(response.status, response.text)
+  ) {
+    request = buildChatRequest(preset.apiStyle, connection.baseUrl, model, trimmed, {
+      ...options,
+      limitParam:
+        request.limitParam === "max_tokens"
+          ? "max_completion_tokens"
+          : "max_tokens",
+    });
+    response = await post(request);
   }
 
   if (response.status < 200 || response.status >= 300) {
     throw new Error(describeHttpError(response.status, response.text, preset.label));
   }
 
-  const text = extractChatText(preset.apiStyle, parseJson(response.text));
-  if (!text) throw new Error("The AI provider returned an empty response.");
-  return text;
+  const parsed = parseJson(response.text);
+  const text = extractChatText(preset.apiStyle, parsed) || "";
+  return {
+    text,
+    finishReason: extractFinishReason(preset.apiStyle, parsed),
+    empty: !text.trim(),
+  };
 }

@@ -15,7 +15,9 @@ import {
   getActiveConnection,
   getPreset,
   hasConnectionKey,
+  loadTokenLimits,
   migrateLegacyConfig,
+  resolveTokenLimits,
   type ChatMessage,
 } from "./ai-connections";
 import { DEFAULT_SYSTEM_PROMPT, loadAiSettings } from "./ai-context";
@@ -32,6 +34,12 @@ export interface AiResult {
   result: string;
   engine: string;
   usedFallback: boolean;
+  /** Why the model stopped (finish_reason / stop_reason / finishReason). */
+  finishReason?: string | null;
+  /** The provider returned no text — often the limit was spent while thinking. */
+  empty?: boolean;
+  /** Resolved response limit, so the UI can explain a cutoff in words. */
+  maxResponseTokens?: number | "model";
 }
 
 export async function getAiConfig(): Promise<AiConfig> {
@@ -96,6 +104,11 @@ export interface AiRequestOptions {
    * the code is already inside it, so the action prompt contains only the task.
    */
   contextText?: string;
+  /**
+   * A previously cut-off answer. It is replayed as an assistant message so the
+   * model can continue from exactly where it stopped.
+   */
+  continueFrom?: string;
 }
 
 /**
@@ -133,11 +146,25 @@ export async function generateAiAssistance(
     { role: "user", content: userContent },
   ];
 
-  const result = await chatWithConnection(connection, messages);
+  const partial = options.continueFrom?.trim();
+  if (partial) {
+    messages.push({ role: "assistant", content: options.continueFrom! });
+    messages.push({
+      role: "user",
+      content:
+        "Continue exactly where you stopped. Do not repeat anything you already wrote.",
+    });
+  }
+
+  const limits = resolveTokenLimits(connection, loadTokenLimits());
+  const response = await chatWithConnection(connection, messages, limits);
   const preset = getPreset(connection.provider);
   return {
-    result,
+    result: response.text,
     engine: `${connection.name || preset.label} · ${connection.model || preset.defaultModel}`,
     usedFallback: false,
+    finishReason: response.finishReason,
+    empty: response.empty,
+    maxResponseTokens: limits.maxResponseTokens,
   };
 }

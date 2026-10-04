@@ -16,13 +16,18 @@ import {
 } from "lucide-react";
 import {
   PROVIDER_PRESETS,
+  CONTEXT_TOKEN_CHOICES,
+  DEFAULT_TOKEN_LIMITS,
+  RESPONSE_TOKEN_CHOICES,
   type AiConnection,
   type ProviderKind,
+  type TokenLimits,
   deleteConnection,
   fetchModels,
   getActiveConnectionId,
   getPreset,
   listConnections,
+  loadTokenLimits,
   makeConnectionId,
   migrateLegacyConfig,
   normalizeBaseUrl,
@@ -60,6 +65,9 @@ export const AiConnectionsSettings: React.FC = () => {
   const [testStatus, setTestStatus] = useState<Status>(null);
   const [models, setModels] = useState<string[] | null>(null);
   const [modelFilter, setModelFilter] = useState("");
+  const [globalLimits, setGlobalLimits] = useState<TokenLimits>({
+    ...DEFAULT_TOKEN_LIMITS,
+  });
 
   const refresh = useCallback(async () => {
     setConnections(await listConnections());
@@ -67,6 +75,7 @@ export const AiConnectionsSettings: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    setGlobalLimits(loadTokenLimits());
     (async () => {
       await migrateLegacyConfig();
       await refresh();
@@ -94,6 +103,23 @@ export const AiConnectionsSettings: React.FC = () => {
   const updateDraft = (patch: Partial<Draft>) =>
     setDraft((prev) => (prev ? { ...prev, ...patch } : prev));
 
+  /** Set or clear one per-connection override ("" = follow the global value). */
+  const setOverride = (key: keyof TokenLimits, raw: string) => {
+    setDraft((prev) => {
+      if (!prev) return prev;
+      const overrides: Partial<TokenLimits> = { ...(prev.overrides || {}) };
+      if (raw === "") delete overrides[key];
+      else if (key === "maxResponseTokens") {
+        overrides.maxResponseTokens = raw === "model" ? "model" : Number(raw);
+      } else if (key === "maxContextTokens") {
+        overrides.maxContextTokens = Number(raw);
+      } else {
+        overrides.temperature = raw === "provider" ? null : Number(raw);
+      }
+      return { ...prev, overrides };
+    });
+  };
+
   const handleProviderChange = (kind: ProviderKind) => {
     const preset = getPreset(kind);
     setDraft((prev) =>
@@ -120,6 +146,9 @@ export const AiConnectionsSettings: React.FC = () => {
         provider: draft.provider,
         baseUrl: normalizeBaseUrl(draft.baseUrl),
         model: draft.model.trim(),
+        ...(draft.overrides && Object.keys(draft.overrides).length > 0
+          ? { overrides: draft.overrides }
+          : {}),
       };
       await saveConnection(connection, keyInput || undefined);
       if (draft.isNew) await pickActiveConnection(connection.id);
@@ -432,6 +461,92 @@ export const AiConnectionsSettings: React.FC = () => {
                 </p>
               </div>
             )}
+          </div>
+
+          {/* Token-limit overrides for this connection */}
+          <div className="space-y-1.5 border-t border-slate-800 pt-2.5">
+            <label className="text-[11px] text-slate-400">
+              Token limits{" "}
+              {draft.overrides && Object.keys(draft.overrides).length > 0 ? (
+                <span className="text-amber-400">
+                  ({Object.keys(draft.overrides).length} override
+                  {Object.keys(draft.overrides).length > 1 ? "s" : ""})
+                </span>
+              ) : (
+                <span className="text-slate-500">(using global defaults)</span>
+              )}
+            </label>
+            <select
+              value={
+                draft.overrides?.maxResponseTokens !== undefined
+                  ? String(draft.overrides.maxResponseTokens)
+                  : ""
+              }
+              onChange={(e) => setOverride("maxResponseTokens", e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-purple-500"
+            >
+              <option value="">
+                Global default (
+                {globalLimits.maxResponseTokens === "model"
+                  ? "Model default"
+                  : globalLimits.maxResponseTokens}
+                ) — max response tokens
+              </option>
+              <option value="model">Model default (provider decides)</option>
+              {RESPONSE_TOKEN_CHOICES.map((value) => (
+                <option key={value} value={value}>
+                  {value} tokens — max response
+                </option>
+              ))}
+            </select>
+            <select
+              value={
+                draft.overrides?.maxContextTokens !== undefined
+                  ? String(draft.overrides.maxContextTokens)
+                  : ""
+              }
+              onChange={(e) => setOverride("maxContextTokens", e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-purple-500"
+            >
+              <option value="">
+                Global default ({globalLimits.maxContextTokens}) — max context
+                tokens
+              </option>
+              {CONTEXT_TOKEN_CHOICES.map((value) => (
+                <option key={value} value={value}>
+                  {value} tokens — max context
+                </option>
+              ))}
+            </select>
+            <select
+              value={
+                draft.overrides?.temperature === undefined
+                  ? ""
+                  : draft.overrides.temperature === null
+                  ? "provider"
+                  : String(draft.overrides.temperature)
+              }
+              onChange={(e) => setOverride("temperature", e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-purple-500"
+            >
+              <option value="">
+                Global default (
+                {globalLimits.temperature === null
+                  ? "Provider default"
+                  : globalLimits.temperature.toFixed(1)}
+                ) — temperature
+              </option>
+              <option value="provider">Provider default — temperature</option>
+              {[0, 0.3, 0.5, 0.7, 1, 1.5, 2].map((value) => (
+                <option key={value} value={value}>
+                  {value.toFixed(1)} — temperature
+                </option>
+              ))}
+            </select>
+            <p className="text-[10px] text-slate-500">
+              Leave on “Global default” to follow Settings → AI. Overrides apply
+              only to this connection.
+            </p>
           </div>
 
           {preset.note && (
