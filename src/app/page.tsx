@@ -943,6 +943,16 @@ export default function CursiveApp() {
       <AIModal
         isOpen={isAIModalOpen}
         activeFile={activeFile}
+        files={files}
+        lastRunResult={executionResult}
+        getSelection={() => {
+          const editor = editorRef.current;
+          if (!editor || typeof editor.getSelection !== "function") return "";
+          const model = editor.getModel?.();
+          const sel = editor.getSelection();
+          if (!model || !sel) return "";
+          return model.getValueInRange(sel) || "";
+        }}
         onClose={() => setIsAIModalOpen(false)}
         onInsertCode={(code) => handleInsertText("\n" + code)}
         onReplaceCode={(code) => handleContentChange(code)}

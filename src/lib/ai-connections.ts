@@ -606,12 +606,42 @@ export interface ChatMessage {
   content: string;
 }
 
+/** Rough token estimate (about four characters per token). */
+export function estimateTokens(text: string): number {
+  return Math.ceil((text || "").length / 4);
+}
+
+/**
+ * Keep the conversation inside a conservative context budget: always keep the
+ * system message and the latest user message, dropping the oldest history first.
+ */
+export const MAX_REQUEST_TOKENS = 12000;
+
+export function fitMessagesToBudget(
+  messages: ChatMessage[],
+  budget = MAX_REQUEST_TOKENS
+): ChatMessage[] {
+  let total = messages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
+  if (total <= budget) return messages;
+
+  const result = [...messages];
+  // Drop the oldest non-system message until we fit (stop at the last two).
+  while (total > budget && result.length > 2) {
+    const index = result.findIndex((m) => m.role !== "system");
+    if (index === -1) break;
+    total -= estimateTokens(result[index].content);
+    result.splice(index, 1);
+  }
+  return result;
+}
+
 /** Send a chat completion through a connection and return the assistant text. */
 export async function chatWithConnection(
   connection: AiConnection,
   messages: ChatMessage[],
   maxTokens = 1024
 ): Promise<string> {
+  messages = fitMessagesToBudget(messages);
   const preset = getPreset(connection.provider);
   const apiKey = (await getSecret(connectionSecretKey(connection.id))) || "";
   const model = (connection.model || preset.defaultModel || "").trim();

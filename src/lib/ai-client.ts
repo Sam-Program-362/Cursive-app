@@ -5,8 +5,8 @@
  *
  * Requests go straight from the device to the provider — there is no Cursive
  * server in the APK. The active connection (see `lib/ai-connections.ts`) supplies
- * the base URL, model and API key. When no key is configured the editor falls
- * back to the built-in offline assistant so the feature still works.
+ * the base URL, model and API key. The system prompt and optional project
+ * context come from Settings > AI (see `lib/ai-context.ts`).
  */
 
 import { generateSmartCodeAssistance, type AIAction } from "./ai-fallback";
@@ -18,6 +18,9 @@ import {
   migrateLegacyConfig,
   type ChatMessage,
 } from "./ai-connections";
+import { DEFAULT_SYSTEM_PROMPT, loadAiSettings } from "./ai-context";
+
+export { DEFAULT_SYSTEM_PROMPT };
 
 export interface AiConfig {
   provider: string;
@@ -30,12 +33,6 @@ export interface AiResult {
   engine: string;
   usedFallback: boolean;
 }
-
-/** Default assistant instructions; the platform facts are added in Settings. */
-export const DEFAULT_SYSTEM_PROMPT =
-  "You are a patient coding assistant and tutor inside Cursive, a code editor " +
-  "for Android. Keep answers short and readable on a phone, use fenced code " +
-  "blocks, and explain things simply. Never claim to have run the user's code.";
 
 export async function getAiConfig(): Promise<AiConfig> {
   await migrateLegacyConfig();
@@ -71,9 +68,34 @@ export function buildAiPrompt(
   }
 }
 
+/** The instruction part of a request, without any code (code lives in context). */
+function taskPhrase(action: string, prompt?: string): string {
+  switch (action) {
+    case "explain":
+      return "Explain clearly what this code does, step by step, and note any edge cases or performance characteristics.";
+    case "fix":
+      return "Identify and fix any syntax errors or logical bugs, and explain the fix briefly.";
+    case "refactor":
+      return "Refactor this code for maximum readability and modern, idiomatic style.";
+    case "complete":
+      return (
+        prompt ||
+        "Suggest the next logical lines of code, and explain them briefly."
+      );
+    case "custom":
+    default:
+      return prompt || "Help me with this code.";
+  }
+}
+
 export interface AiRequestOptions {
-  /** Overrides the default system prompt (Settings > AI). */
+  /** Overrides the saved system prompt (Settings > AI). */
   systemPrompt?: string;
+  /**
+   * Pre-built project context block (Settings > AI project access). When set,
+   * the code is already inside it, so the action prompt contains only the task.
+   */
+  contextText?: string;
 }
 
 /**
@@ -97,8 +119,15 @@ export async function generateAiAssistance(
     };
   }
 
-  const userContent = buildAiPrompt(action, language, code, prompt);
-  const systemPrompt = options.systemPrompt?.trim() || DEFAULT_SYSTEM_PROMPT;
+  const settings = loadAiSettings();
+  const systemPrompt =
+    options.systemPrompt?.trim() || settings.systemPrompt || DEFAULT_SYSTEM_PROMPT;
+
+  const task = taskPhrase(action, prompt);
+  const userContent = options.contextText
+    ? `${options.contextText}\n\n## Your task\n${task}`
+    : buildAiPrompt(action, language, code, prompt);
+
   const messages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
     { role: "user", content: userContent },

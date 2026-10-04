@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { EditorSettings } from "@/types";
 import { Settings, X, Type, AlignLeft, Zap, Sliders } from "lucide-react";
 import { AiConnectionsSettings } from "./AiConnectionsSettings";
+import { AiContextSettings } from "./AiContextSettings";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -303,6 +304,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {/* AI connections (bring your own provider) */}
           <AiConnectionsSettings />
+
+          {/* AI instructions + project context */}
+          <AiContextSettings />
         </div>
 
         {/* Footer */}

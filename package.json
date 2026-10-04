@@ -14,6 +14,7 @@
     "test:console": "bun scripts/test-console-panel.mjs",
     "test:touch": "bun scripts/test-touch-keyboard.mjs",
     "test:ai": "bun scripts/test-ai-connections.mjs",
+    "test:context": "bun scripts/test-ai-context.mjs",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {

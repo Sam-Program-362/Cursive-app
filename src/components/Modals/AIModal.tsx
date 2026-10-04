@@ -1,9 +1,15 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { FileItem } from "@/types";
+import React, { useEffect, useMemo, useState } from "react";
+import { ExecutionResult, FileItem } from "@/types";
 import { generateSmartCodeAssistance } from "@/lib/ai-fallback";
 import { generateAiAssistance, getAiConfig } from "@/lib/ai-client";
+import {
+  buildAiContext,
+  describeContext,
+  loadAiSettings,
+  type AiSettings,
+} from "@/lib/ai-context";
 import { useOnlineStatus } from "@/lib/use-online-status";
 import {
   Sparkles,
@@ -11,19 +17,25 @@ import {
   Play,
   Copy,
   Check,
-  FileCode,
-  ArrowRight,
   Lightbulb,
   Wrench,
   RotateCcw,
   Loader2,
   AlertCircle,
   KeyRound,
+  Eye,
+  Paperclip,
 } from "lucide-react";
 
 interface AIModalProps {
   isOpen: boolean;
   activeFile: FileItem | null;
+  /** All files in the project (used for the "Whole project" context level). */
+  files?: FileItem[];
+  /** The last run's output, attached as context when project access allows it. */
+  lastRunResult?: ExecutionResult | null;
+  /** Reads the current editor selection, if any. */
+  getSelection?: () => string;
   onClose: () => void;
   onInsertCode: (code: string) => void;
   onReplaceCode: (code: string) => void;
@@ -33,6 +45,9 @@ interface AIModalProps {
 export const AIModal: React.FC<AIModalProps> = ({
   isOpen,
   activeFile,
+  files = [],
+  lastRunResult = null,
+  getSelection,
   onClose,
   onInsertCode,
   onReplaceCode,
@@ -40,28 +55,62 @@ export const AIModal: React.FC<AIModalProps> = ({
 }) => {
   const online = useOnlineStatus();
   const [prompt, setPrompt] = useState("");
-  const [action, setAction] = useState<"complete" | "explain" | "fix" | "refactor" | "custom">("complete");
+  const [action, setAction] = useState<
+    "complete" | "explain" | "fix" | "refactor" | "custom"
+  >("complete");
   const [isLoading, setIsLoading] = useState(false);
   const [aiResult, setAiResult] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [engineUsed, setEngineUsed] = useState<string>("");
   const [configured, setConfigured] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [settings, setSettings] = useState<AiSettings>({
+    systemPrompt: "",
+    projectAccess: "off",
+  });
+  const [includeContext, setIncludeContext] = useState(false);
+  const [selection, setSelection] = useState("");
 
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
+    const loaded = loadAiSettings();
+    setSettings(loaded);
+    setIncludeContext(loaded.projectAccess !== "off");
+    setError(null);
+    setAiResult(null);
+    setSelection(getSelection ? getSelection() : "");
     getAiConfig().then((config) => {
       if (!cancelled) setConfigured(config.hasKey);
     });
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
+
+  // What will be attached to the next message (recomputed as the user edits).
+  const contextResult = useMemo(
+    () =>
+      buildAiContext({
+        level: settings.projectAccess,
+        activeFile,
+        files,
+        selection,
+        lastRun: lastRunResult,
+      }),
+    [settings.projectAccess, activeFile, files, selection, lastRunResult]
+  );
 
   if (!isOpen) return null;
 
-  const handleGenerate = async (selectedAction = action, customPrompt = prompt) => {
+  const contextEnabled =
+    includeContext && settings.projectAccess !== "off" && contextResult.text.length > 0;
+
+  const handleGenerate = async (
+    selectedAction = action,
+    customPrompt = prompt
+  ) => {
     if (!activeFile) return;
 
     setIsLoading(true);
@@ -88,7 +137,11 @@ export const AIModal: React.FC<AIModalProps> = ({
         selectedAction,
         activeFile.language,
         activeFile.content,
-        customPrompt
+        customPrompt,
+        {
+          systemPrompt: settings.systemPrompt,
+          contextText: contextEnabled ? contextResult.text : undefined,
+        }
       );
       setAiResult(response.result);
       setEngineUsed(response.engine);
@@ -121,7 +174,7 @@ export const AIModal: React.FC<AIModalProps> = ({
                 AI Coding Assistant
               </h2>
               <p className="text-[11px] text-slate-400">
-                Smart on-demand completions, explanations & refactoring
+                Views your code to help — it cannot edit or run anything
               </p>
             </div>
           </div>
@@ -228,6 +281,30 @@ export const AIModal: React.FC<AIModalProps> = ({
               Ask
             </button>
           </div>
+
+          {/* Context preview + per-message toggle */}
+          {settings.projectAccess !== "off" && contextResult.text.length > 0 && (
+            <div className="flex items-center gap-2 p-2 rounded-xl border border-slate-800 bg-slate-900/60">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={includeContext}
+                onClick={() => setIncludeContext((v) => !v)}
+                title="Include project context in this message"
+                className={`shrink-0 w-9 h-5 rounded-full p-0.5 transition-colors ${
+                  includeContext ? "bg-emerald-600 justify-end" : "bg-slate-700 justify-start"
+                } flex items-center`}
+              >
+                <span className="w-4 h-4 rounded-full bg-white shadow" />
+              </button>
+              <Paperclip className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span className="text-[11px] text-slate-300 truncate">
+                {includeContext
+                  ? describeContext(contextResult)
+                  : "Project context off for this message"}
+              </span>
+            </div>
+          )}
         </div>
 
         {(error || !configured) && (
@@ -272,8 +349,9 @@ export const AIModal: React.FC<AIModalProps> = ({
           ) : aiResult ? (
             <div className="space-y-2">
               <div className="flex items-center justify-between text-[11px] text-slate-400 pb-2 border-b border-slate-800">
-                <span className="text-purple-400 font-sans font-semibold">
-                  ⚡ Generated with {engineUsed}
+                <span className="text-purple-400 font-sans font-semibold flex items-center gap-1.5">
+                  <Eye className="w-3 h-3" />
+                  {engineUsed}
                 </span>
                 <button
                   type="button"
@@ -294,7 +372,8 @@ export const AIModal: React.FC<AIModalProps> = ({
             </div>
           ) : (
             <div className="flex items-center justify-center h-full py-12 text-slate-500 text-xs text-center font-sans">
-              Choose a quick action above or enter a prompt to get AI assistance for {activeFile?.name || "your code"}.
+              Choose a quick action above or enter a prompt to get AI assistance
+              for {activeFile?.name || "your code"}.
             </div>
           )}
         </div>
