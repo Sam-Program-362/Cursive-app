@@ -243,8 +243,9 @@ export const AIModal: React.FC<AIModalProps> = ({
                 <span className="flex items-start gap-2">
                   <KeyRound className="w-4 h-4 shrink-0 mt-0.5" />
                   <span>
-                    Using the built-in offline assistant. Add your own API key (OpenAI,
-                    Claude or Gemini) for real AI that understands your code.
+                    Using the built-in offline assistant. Add an AI connection
+                    (OpenRouter, OpenAI, Claude, Gemini, a local server and more)
+                    for real AI that understands your code.
                   </span>
                 </span>
                 {onOpenSettings && (

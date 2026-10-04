@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cursive talks to AI providers chosen by the user. All hosted providers use
+  HTTPS, but a local Ollama / LM Studio server typically listens on plain HTTP
+  over the LAN, which Android blocks by default on API 28+.
+
+  Cleartext is permitted so that local-server preset works. This is a
+  deliberate trade-off for an offline-first editor whose endpoints are chosen
+  by the user; hosted providers keep using HTTPS.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

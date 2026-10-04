@@ -13,6 +13,7 @@
     "test:emulator": "bun scripts/test-output-emulator.mjs",
     "test:console": "bun scripts/test-console-panel.mjs",
     "test:touch": "bun scripts/test-touch-keyboard.mjs",
+    "test:ai": "bun scripts/test-ai-connections.mjs",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
