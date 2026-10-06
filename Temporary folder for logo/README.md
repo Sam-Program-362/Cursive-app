@@ -1,28 +1,32 @@
-# Cursive — Exact Logo Fixed
+# Cursive — Exact Logo Assets v2
 
-This package is a corrected extraction of the **exact Cursive logo shown in the approved presentation image**.
+These assets are generated directly from the supplied high-resolution logo image (`cursive-logo-exact-source-1536.png`).
 
-Important:
-- This is NOT a recreated SVG.
-- The logo geometry, cursor, glow, gradient, and proportions are preserved from the supplied visual.
-- Only the crop and raster sizes were corrected.
-- `icon-512.png` is the recommended source for the current Cursive app asset pipeline.
+## Important
+- No logo recreation.
+- No vector redraw.
+- No crop.
+- No stretch or squeeze.
+- No zooming into the artwork.
+- The entire 1536×1536 source canvas is preserved at every output size.
+- Every production asset is a square resize of the exact same source image using high-quality Lanczos resampling.
+- The black background is part of the supplied source image and is intentionally preserved.
 
-## Files
-- `icon-512.png` — primary app/PWA source
-- `icon-192.png` — PWA
-- `maskable-512.png` — maskable PWA/Android source
-- `apple-touch-icon.png` — iOS
-- `favicon-32.png` — browser favicon
-- `icon-1024.png` — high-resolution reference
-- `cursive-logo-exact-reference.png` — exact crop before resizing
+## Assets
+- `icon-1024.png` — high-resolution master
+- `icon-512.png` — primary PWA/Android generation source
+- `icon-192.png` — PWA icon
+- `maskable-512.png` — maskable icon; same full-canvas artwork, no crop
+- `apple-touch-icon.png` — Apple touch icon
+- `favicon-32.png` — favicon
+- `cursive-logo-exact-source-1536.png` — original supplied source, unchanged
 
 ## Integration
-In `Cursive-app`:
-1. Replace `public/icon-512.png` with this `icon-512.png`.
-2. Replace `public/icon-192.png`, `public/maskable-512.png`, `public/apple-touch-icon.png`, and `public/favicon-32.png` with the matching files.
-3. Keep the existing `scripts/generate-android-assets.mjs` pipeline; it uses `public/icon-512.png` as its source.
-4. Run the existing Android asset generation/build process.
-5. Do NOT use the earlier hand-drawn SVG as the production icon if the goal is to preserve this exact visual.
+Copy the corresponding files into `Cursive-app/public/` and run:
 
-Note: because this is an exact raster extraction, `icon.svg` should not be treated as the source of truth for this particular version. The 512px PNG is the source asset.
+`node scripts/generate-android-assets.mjs`
+
+Then verify the generated Android assets visually. Do not recreate `icon.svg` from the raster image. If the project still has references to `public/icon.svg`, handle those references separately rather than inventing a new logo.
+
+## Source
+The source image is kept in this package unchanged so there is an auditable master for future asset generation.
