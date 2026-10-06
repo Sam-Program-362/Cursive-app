@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cursive-v2';
+const CACHE_NAME = 'cursive-v3';
 
 const PRECACHE_ASSETS = [
   '/',

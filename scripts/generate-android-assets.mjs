@@ -10,7 +10,11 @@ import path from "node:path";
 
 const ROOT = process.cwd();
 const RES = path.join(ROOT, "android/app/src/main/res");
-const SOURCE = path.join(ROOT, "public/icon-512.png");
+// Generate Android resources directly from the authoritative, complete source canvas.
+const SOURCE = path.join(
+  ROOT,
+  "Temporary folder for logo/cursive-logo-exact-source-1536.png"
+);
 
 /** Brand background — matches the web app's slate/indigo theme. */
 const BRAND = { r: 0x1a, g: 0x1b, b: 0x2e, alpha: 1 };
