@@ -15,6 +15,7 @@
     "test:touch": "bun scripts/test-touch-keyboard.mjs",
     "test:ai": "bun scripts/test-ai-connections.mjs",
     "test:context": "bun scripts/test-ai-context.mjs",
+    "test:chat": "bun scripts/test-ai-chat.mjs",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {

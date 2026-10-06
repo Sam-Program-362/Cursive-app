@@ -105,10 +105,74 @@ export interface AiRequestOptions {
    */
   contextText?: string;
   /**
+   * Previous turns of the conversation (task text only — no context block).
+   * Only the newest message carries freshly attached project context.
+   */
+  history?: ChatMessage[];
+  /**
+   * Send the task exactly as written. Thread follow-ups use this so the code
+   * block is not re-wrapped on every message when project context is off.
+   */
+  verbatimTask?: boolean;
+  /**
    * A previously cut-off answer. It is replayed as an assistant message so the
    * model can continue from exactly where it stopped.
    */
   continueFrom?: string;
+}
+
+export const CONTINUE_PROMPT =
+  "Continue exactly where you stopped. Do not repeat anything you already wrote.";
+
+/**
+ * Assemble the message list for one turn: system prompt, then the kept
+ * history (oldest turns are trimmed later, inside chatWithConnection), then
+ * either the new user message or the continue instruction.
+ */
+export function buildThreadMessages(input: {
+  systemPrompt: string;
+  history?: ChatMessage[];
+  userContent: string;
+  continueFrom?: string;
+}): ChatMessage[] {
+  const history = input.history || [];
+  const messages: ChatMessage[] = [
+    { role: "system", content: input.systemPrompt },
+    ...history,
+  ];
+
+  const partial = input.continueFrom?.trim();
+  if (partial) {
+    const last = history[history.length - 1];
+    // One-shot replay (no thread): the original question must be present too.
+    if (history.length === 0) {
+      messages.push({ role: "user", content: input.userContent });
+    }
+    // When the history already ends with the partial answer, don't duplicate it.
+    if (!last || last.role !== "assistant") {
+      messages.push({ role: "assistant", content: partial });
+    }
+    messages.push({ role: "user", content: CONTINUE_PROMPT });
+  } else {
+    messages.push({ role: "user", content: input.userContent });
+  }
+  return messages;
+}
+
+/**
+ * The task text a turn contributes to the thread history — the user message
+ * without the context block, so context copies never pile up across turns.
+ */
+export function turnTask(
+  action: AIAction | "custom",
+  language: string,
+  code: string,
+  prompt: string,
+  hasContext: boolean
+): string {
+  return hasContext
+    ? taskPhrase(action, prompt)
+    : buildAiPrompt(action, language, code, prompt);
 }
 
 /**
@@ -139,22 +203,16 @@ export async function generateAiAssistance(
   const task = taskPhrase(action, prompt);
   const userContent = options.contextText
     ? `${options.contextText}\n\n## Your task\n${task}`
+    : options.verbatimTask
+    ? task
     : buildAiPrompt(action, language, code, prompt);
 
-  const messages: ChatMessage[] = [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: userContent },
-  ];
-
-  const partial = options.continueFrom?.trim();
-  if (partial) {
-    messages.push({ role: "assistant", content: options.continueFrom! });
-    messages.push({
-      role: "user",
-      content:
-        "Continue exactly where you stopped. Do not repeat anything you already wrote.",
-    });
-  }
+  const messages = buildThreadMessages({
+    systemPrompt,
+    history: options.history,
+    userContent,
+    continueFrom: options.continueFrom,
+  });
 
   const limits = resolveTokenLimits(connection, loadTokenLimits());
   const response = await chatWithConnection(connection, messages, limits);
