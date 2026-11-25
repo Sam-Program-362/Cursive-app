@@ -75,7 +75,7 @@ jobs:
         env:
           CURSIVE_KEYSTORE_FILE: ${{ runner.temp }}/cursive-release.keystore
           CURSIVE_STORE_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
-          CURSIVE_KEY_ALIAS: cursive
+          CURSIVE_KEY_ALIAS: personal-release
           CURSIVE_KEY_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: |
           chmod +x ./gradlew
